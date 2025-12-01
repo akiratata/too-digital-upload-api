@@ -1,0 +1,14 @@
+[Unit]
+Description=NFT Upload API Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/srv/toodigital/upload_server_rust
+ExecStart=/srv/toodigital/upload_server_rust/target/release/nft-upload-server
+Restart=always
+Environment="RUST_LOG=info"
+
+[Install]
+WantedBy=multi-user.target
