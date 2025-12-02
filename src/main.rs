@@ -100,8 +100,24 @@ async fn health_check() -> Json<HealthResponse> {
 ///   }
 async fn upload_file(
     State(config): State<Arc<AppConfig>>,
-    mut multipart: Multipart,
+    multipart_result: Result<Multipart, axum::extract::multipart::MultipartError>,
 ) -> Result<Json<UploadResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // ★ まず multipart の解析が成功したか確認
+    let mut multipart = match multipart_result {
+        Ok(m) => {
+            info!("✅ Multipart parsing successful");
+            m
+        }
+        Err(e) => {
+            // ★ エラーの詳細をログ出力
+            warn!("❌ Multipart parsing failed: {:?}", e);
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                format!("Multipart parsing error: {:?}", e),
+            ));
+        }
+    };
+
     let mut file_data: Option<Vec<u8>> = None;
     let mut original_filename: Option<String> = None;
     let mut album_id: Option<String> = None;
@@ -113,68 +129,65 @@ async fn upload_file(
     while let Some(field) = multipart
         .next_field()
         .await
-        .map_err(|e| error_response(StatusCode::BAD_REQUEST, format!("Multipart error: {}", e)))?
+        .map_err(|e| {
+            warn!("❌ Field read error: {:?}", e);
+            error_response(StatusCode::BAD_REQUEST, format!("Field read error: {:?}", e))
+        })?
     {
         let name = field.name().unwrap_or("").to_string();
+        info!("📦 Processing field: {}", name);
 
         match name.as_str() {
             "file" => {
                 original_filename = field.file_name().map(|s| s.to_string());
-                file_data = Some(
-                    field
-                        .bytes()
-                        .await
-                        .map_err(|e| {
-                            error_response(StatusCode::BAD_REQUEST, format!("File read error: {}", e))
-                        })?
-                        .to_vec(),
-                );
+                info!("📄 File field found: {:?}", original_filename);
+
+                let bytes = field
+                    .bytes()
+                    .await
+                    .map_err(|e| {
+                        warn!("❌ File bytes read error: {:?}", e);
+                        error_response(StatusCode::BAD_REQUEST, format!("File read error: {:?}", e))
+                    })?
+                    .to_vec();
+
+                info!("✅ File bytes read: {} bytes", bytes.len());
+                file_data = Some(bytes);
             }
             "album_id" => {
-                album_id = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| {
-                            error_response(StatusCode::BAD_REQUEST, format!("album_id error: {}", e))
-                        })?,
-                );
+                let text = field.text().await.map_err(|e| {
+                    warn!("❌ album_id read error: {:?}", e);
+                    error_response(StatusCode::BAD_REQUEST, format!("album_id error: {:?}", e))
+                })?;
+                info!("📝 album_id: {}", text);
+                album_id = Some(text);
             }
             "file_type" => {
-                file_type = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| {
-                            error_response(StatusCode::BAD_REQUEST, format!("file_type error: {}", e))
-                        })?,
-                );
+                let text = field.text().await.map_err(|e| {
+                    warn!("❌ file_type read error: {:?}", e);
+                    error_response(StatusCode::BAD_REQUEST, format!("file_type error: {:?}", e))
+                })?;
+                info!("📝 file_type: {}", text);
+                file_type = Some(text);
             }
             "category" => {
-                category = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| {
-                            error_response(StatusCode::BAD_REQUEST, format!("category error: {}", e))
-                        })?,
-                );
+                let text = field.text().await.map_err(|e| {
+                    warn!("❌ category read error: {:?}", e);
+                    error_response(StatusCode::BAD_REQUEST, format!("category error: {:?}", e))
+                })?;
+                info!("📝 category: {}", text);
+                category = Some(text);
             }
             "track_number" => {
-                track_number = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| {
-                            error_response(
-                                StatusCode::BAD_REQUEST,
-                                format!("track_number error: {}", e),
-                            )
-                        })?,
-                );
+                let text = field.text().await.map_err(|e| {
+                    warn!("❌ track_number read error: {:?}", e);
+                    error_response(StatusCode::BAD_REQUEST, format!("track_number error: {:?}", e))
+                })?;
+                info!("📝 track_number: {}", text);
+                track_number = Some(text);
             }
             _ => {
-                warn!("Unknown field: {}", name);
+                warn!("⚠️  Unknown field: {}", name);
             }
         }
     }
