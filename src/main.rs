@@ -100,23 +100,9 @@ async fn health_check() -> Json<HealthResponse> {
 ///   }
 async fn upload_file(
     State(config): State<Arc<AppConfig>>,
-    multipart_result: Result<Multipart, axum::extract::multipart::MultipartError>,
+    mut multipart: Multipart,
 ) -> Result<Json<UploadResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // ★ まず multipart の解析が成功したか確認
-    let mut multipart = match multipart_result {
-        Ok(m) => {
-            info!("✅ Multipart parsing successful");
-            m
-        }
-        Err(e) => {
-            // ★ エラーの詳細をログ出力
-            warn!("❌ Multipart parsing failed: {:?}", e);
-            return Err(error_response(
-                StatusCode::BAD_REQUEST,
-                format!("Multipart parsing error: {:?}", e),
-            ));
-        }
-    };
+    info!("✅ Multipart parsing successful");
 
     let mut file_data: Option<Vec<u8>> = None;
     let mut original_filename: Option<String> = None;
