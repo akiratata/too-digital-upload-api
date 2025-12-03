@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Multipart, State},
+    extract::{DefaultBodyLimit, Multipart, State},
     http::StatusCode,
     response::Json,
     routing::{get, post},
@@ -377,11 +377,13 @@ async fn main() {
         .route("/api/health", get(health_check))
         .route("/api/upload", post(upload_file))
         .route("/api/delete", post(delete_file))
+        .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB まで許可
         .layer(CorsLayer::permissive())
         .with_state(config);
 
     let addr = "0.0.0.0:3000";
     info!("🚀 NFT Upload API Server listening on {}", addr);
+    info!("📦 Max body size: 50MB");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
