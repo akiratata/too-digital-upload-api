@@ -208,10 +208,10 @@ async fn upload_file(
     }
 
     // category のバリデーション
-    if category != "tracks" && category != "cover" {
+    if category != "tracks" && category != "cover" && category != "manifest" {
         return Err(error_response(
             StatusCode::BAD_REQUEST,
-            "category must be 'tracks' or 'cover'".to_string(),
+            "category must be 'tracks', 'cover', or 'manifest'".to_string(),
         ));
     }
 
@@ -231,6 +231,9 @@ async fn upload_file(
             )
         })?;
         format!("{}.{}", track_num, extension)
+    } else if category == "manifest" {
+        // manifest の場合は常に manifest.json として保存
+        "manifest.json".to_string()
     } else {
         // cover の場合
         format!("cover.{}", extension)
