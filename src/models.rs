@@ -117,6 +117,34 @@ pub struct CreateListingRequest {
 fn default_currency() -> String { "SUI".to_string() }
 fn default_supply() -> i64 { 1 }
 
+/// Listing 更新リクエスト
+#[derive(Debug, Deserialize)]
+pub struct UpdateListingRequest {
+    pub seller: Option<String>,
+    pub price: Option<i64>,
+    pub supply_remaining: Option<i64>,
+    pub status: Option<i32>,
+}
+
+/// Listing レスポンス（API返却用）
+#[derive(Debug, Serialize)]
+pub struct ListingResponse {
+    pub listing_id: String,
+    pub vendor_stable_id: String,
+    pub vendor_object_id: Option<String>,
+    pub seller: Option<String>,
+    pub item_type: i32,
+    pub item_id: Option<String>,
+    pub price: i64,
+    pub currency: String,
+    pub supply_total: i64,
+    pub supply_remaining: i64,
+    pub status: i32,
+    pub created_at_ms: Option<i64>,
+    pub updated_at_ms: Option<i64>,
+    pub is_alive: bool,
+}
+
 // ========================================
 // Receipt
 // ========================================
