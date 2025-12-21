@@ -2,7 +2,7 @@ use axum::{
     extract::{DefaultBodyLimit, Multipart, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -399,6 +399,12 @@ async fn main() {
         .route("/api/vendors/:stable_id", get(handlers::vendors::get_vendor))
         .route("/api/vendors/:stable_id", put(handlers::vendors::update_vendor))
         .route("/api/vendors/:stable_id/icon", post(handlers::vendors::upload_vendor_icon))
+        // Listings API
+        .route("/api/listings", get(handlers::listings::list_listings))
+        .route("/api/listings", post(handlers::listings::create_listing))
+        .route("/api/listings/:listing_id", get(handlers::listings::get_listing))
+        .route("/api/listings/:listing_id", put(handlers::listings::update_listing))
+        .route("/api/listings/:listing_id", delete(handlers::listings::delete_listing))
         // ミドルウェア
         .layer(DefaultBodyLimit::max(800 * 1024 * 1024)) // 800MB まで許可
         .layer(CorsLayer::permissive())
