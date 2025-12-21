@@ -2,7 +2,7 @@ use axum::{
     extract::{DefaultBodyLimit, Multipart, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post},
+    routing::{get, post, put},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -13,8 +13,25 @@ use tokio::io::AsyncWriteExt;
 use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
 
+mod db;
+mod models;
+mod handlers;
+
+use db::DbPool;
+
 // ========================================
-// 設定
+// アプリケーション状態
+// ========================================
+
+/// 共有アプリケーション状態
+pub struct AppState {
+    pub base_data_dir: String,
+    pub vps_base_url: String,
+    pub db: DbPool,
+}
+
+// ========================================
+// レガシー設定（後方互換用）
 // ========================================
 
 #[derive(Clone)]
@@ -41,6 +58,7 @@ struct HealthResponse {
     status: String,
     service: String,
     version: String,
+    db_status: String,
 }
 
 #[derive(Serialize)]
@@ -74,35 +92,29 @@ struct DeleteResponse {
 // ========================================
 
 /// ヘルスチェック
-async fn health_check() -> Json<HealthResponse> {
+async fn health_check(
+    State(state): State<Arc<AppState>>,
+) -> Json<HealthResponse> {
+    // DB接続チェック
+    let db_status = match sqlx::query("SELECT 1").execute(&state.db).await {
+        Ok(_) => "connected".to_string(),
+        Err(e) => format!("error: {}", e),
+    };
+
     Json(HealthResponse {
         status: "ok".to_string(),
         service: "nft-upload-api".to_string(),
-        version: "0.1.0".to_string(),
+        version: "0.2.0".to_string(),
+        db_status,
     })
 }
 
-/// ファイルアップロード
-///
-/// Parameters (multipart/form-data):
-///   - file: バイナリファイル（必須）
-///   - album_id: アルバムID（必須）例: "album123"
-///   - file_type: "promo" | "albums"（必須）
-///   - category: "tracks" | "cover"（必須）
-///   - track_number: トラック番号（tracks の場合のみ）例: "01"
-///
-/// Returns:
-///   JSON: {
-///     "success": true,
-///     "url": "http://153.121.61.17/nft/promo/album123/tracks/01.mp3",
-///     "path": "/data/nft/promo/album123/tracks/01.mp3",
-///     "filename": "01.mp3"
-///   }
+/// ファイルアップロード（レガシーAPI - 後方互換）
 async fn upload_file(
-    State(config): State<Arc<AppConfig>>,
+    State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> Result<Json<UploadResponse>, (StatusCode, Json<ErrorResponse>)> {
-    info!("✅ Multipart parsing successful");
+    info!("Multipart parsing started");
 
     let mut file_data: Option<Vec<u8>> = None;
     let mut original_filename: Option<String> = None;
@@ -116,64 +128,56 @@ async fn upload_file(
         .next_field()
         .await
         .map_err(|e| {
-            warn!("❌ Field read error: {:?}", e);
+            warn!("Field read error: {:?}", e);
             error_response(StatusCode::BAD_REQUEST, format!("Field read error: {:?}", e))
         })?
     {
         let name = field.name().unwrap_or("").to_string();
-        info!("📦 Processing field: {}", name);
+        info!("Processing field: {}", name);
 
         match name.as_str() {
             "file" => {
                 original_filename = field.file_name().map(|s| s.to_string());
-                info!("📄 File field found: {:?}", original_filename);
+                info!("File field found: {:?}", original_filename);
 
                 let bytes = field
                     .bytes()
                     .await
                     .map_err(|e| {
-                        warn!("❌ File bytes read error: {:?}", e);
+                        warn!("File bytes read error: {:?}", e);
                         error_response(StatusCode::BAD_REQUEST, format!("File read error: {:?}", e))
                     })?
                     .to_vec();
 
-                info!("✅ File bytes read: {} bytes", bytes.len());
+                info!("File bytes read: {} bytes", bytes.len());
                 file_data = Some(bytes);
             }
             "album_id" => {
                 let text = field.text().await.map_err(|e| {
-                    warn!("❌ album_id read error: {:?}", e);
                     error_response(StatusCode::BAD_REQUEST, format!("album_id error: {:?}", e))
                 })?;
-                info!("📝 album_id: {}", text);
                 album_id = Some(text);
             }
             "file_type" => {
                 let text = field.text().await.map_err(|e| {
-                    warn!("❌ file_type read error: {:?}", e);
                     error_response(StatusCode::BAD_REQUEST, format!("file_type error: {:?}", e))
                 })?;
-                info!("📝 file_type: {}", text);
                 file_type = Some(text);
             }
             "category" => {
                 let text = field.text().await.map_err(|e| {
-                    warn!("❌ category read error: {:?}", e);
                     error_response(StatusCode::BAD_REQUEST, format!("category error: {:?}", e))
                 })?;
-                info!("📝 category: {}", text);
                 category = Some(text);
             }
             "track_number" => {
                 let text = field.text().await.map_err(|e| {
-                    warn!("❌ track_number read error: {:?}", e);
                     error_response(StatusCode::BAD_REQUEST, format!("track_number error: {:?}", e))
                 })?;
-                info!("📝 track_number: {}", text);
                 track_number = Some(text);
             }
             _ => {
-                warn!("⚠️  Unknown field: {}", name);
+                warn!("Unknown field: {}", name);
             }
         }
     }
@@ -223,7 +227,6 @@ async fn upload_file(
         .to_lowercase();
 
     let filename = if category == "tracks" {
-        // tracks の場合は track_number が必須
         let track_num = track_number.ok_or_else(|| {
             error_response(
                 StatusCode::BAD_REQUEST,
@@ -232,22 +235,17 @@ async fn upload_file(
         })?;
         format!("{}.{}", track_num, extension)
     } else if category == "manifest" {
-        // manifest の場合は常に manifest.json として保存
         "manifest.json".to_string()
     } else {
-        // cover の場合
         format!("cover.{}", extension)
     };
 
     // 保存先ディレクトリの構築
+    let base_dir = PathBuf::from(&state.base_data_dir);
     let target_dir = if category == "tracks" {
-        config
-            .base_data_dir
-            .join(&file_type)
-            .join(&album_id)
-            .join("tracks")
+        base_dir.join(&file_type).join(&album_id).join("tracks")
     } else {
-        config.base_data_dir.join(&file_type).join(&album_id)
+        base_dir.join(&file_type).join(&album_id)
     };
 
     // ディレクトリ作成
@@ -276,7 +274,7 @@ async fn upload_file(
         )
     })?;
 
-    info!("✅ File saved: {:?}", target_path);
+    info!("File saved: {:?}", target_path);
 
     // 所有権を caddy に変更（ベストエフォート）
     #[cfg(target_os = "linux")]
@@ -296,12 +294,12 @@ async fn upload_file(
     let url = if category == "tracks" {
         format!(
             "{}/{}/{}/tracks/{}",
-            config.vps_base_url, file_type, album_id, filename
+            state.vps_base_url, file_type, album_id, filename
         )
     } else {
         format!(
             "{}/{}/{}/{}",
-            config.vps_base_url, file_type, album_id, filename
+            state.vps_base_url, file_type, album_id, filename
         )
     };
 
@@ -315,11 +313,10 @@ async fn upload_file(
 
 /// ファイル削除（売り切れ時などに使用）
 async fn delete_file(
-    State(config): State<Arc<AppConfig>>,
+    State(state): State<Arc<AppState>>,
     Json(payload): Json<DeleteRequest>,
 ) -> Result<Json<DeleteResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let target_dir = config
-        .base_data_dir
+    let target_dir = PathBuf::from(&state.base_data_dir)
         .join(&payload.file_type)
         .join(&payload.album_id);
 
@@ -337,7 +334,7 @@ async fn delete_file(
         )
     })?;
 
-    info!("🗑️  Deleted: {:?}", target_dir);
+    info!("Deleted: {:?}", target_dir);
 
     Ok(Json(DeleteResponse {
         success: true,
@@ -373,20 +370,44 @@ async fn main() {
         )
         .init();
 
-    let config = Arc::new(AppConfig::default());
+    // 設定
+    let base_data_dir = "/data/nft".to_string();
+    let vps_base_url = "http://153.121.61.17/nft".to_string();
+    let db_path = "/data/nft/nft_server.db";
+
+    // DB初期化
+    info!("Initializing database...");
+    let db = db::init_db(db_path).await.expect("Failed to initialize database");
+
+    // アプリケーション状態
+    let state = Arc::new(AppState {
+        base_data_dir,
+        vps_base_url,
+        db,
+    });
 
     // ルーター構築
     let app = Router::new()
+        // ヘルスチェック
         .route("/api/health", get(health_check))
+        // レガシーAPI（後方互換）
         .route("/api/upload", post(upload_file))
         .route("/api/delete", post(delete_file))
+        // Vendors API
+        .route("/api/vendors", get(handlers::vendors::list_vendors))
+        .route("/api/vendors", post(handlers::vendors::create_vendor))
+        .route("/api/vendors/:stable_id", get(handlers::vendors::get_vendor))
+        .route("/api/vendors/:stable_id", put(handlers::vendors::update_vendor))
+        .route("/api/vendors/:stable_id/icon", post(handlers::vendors::upload_vendor_icon))
+        // ミドルウェア
         .layer(DefaultBodyLimit::max(800 * 1024 * 1024)) // 800MB まで許可
         .layer(CorsLayer::permissive())
-        .with_state(config);
+        .with_state(state);
 
     let addr = "0.0.0.0:3000";
-    info!("🚀 NFT Upload API Server listening on {}", addr);
-    info!("📦 Max body size: 800MB");
+    info!("NFT Upload API Server v0.2.0 listening on {}", addr);
+    info!("Max body size: 800MB");
+    info!("Database: {}", db_path);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
