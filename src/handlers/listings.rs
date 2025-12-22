@@ -150,15 +150,20 @@ pub async fn create_listing(
             listing_id, vendor_stable_id, vendor_object_id, seller,
             item_type, item_id, price, currency,
             supply_total, supply_remaining, status,
-            env, created_at_ms, updated_at_ms, is_alive
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'devnet', ?, ?, 1)
+            env, created_at_ms, updated_at_ms, is_alive,
+            manifest_id, title, artist, cover_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'devnet', ?, ?, 1, ?, ?, ?, ?)
         ON CONFLICT(listing_id) DO UPDATE SET
             vendor_object_id = COALESCE(excluded.vendor_object_id, listings.vendor_object_id),
             seller = COALESCE(excluded.seller, listings.seller),
             price = excluded.price,
             supply_remaining = excluded.supply_remaining,
             updated_at_ms = excluded.updated_at_ms,
-            is_alive = 1
+            is_alive = 1,
+            manifest_id = COALESCE(excluded.manifest_id, listings.manifest_id),
+            title = COALESCE(excluded.title, listings.title),
+            artist = COALESCE(excluded.artist, listings.artist),
+            cover_url = COALESCE(excluded.cover_url, listings.cover_url)
     "#)
     .bind(&req.listing_id)
     .bind(&req.vendor_stable_id)
@@ -172,6 +177,10 @@ pub async fn create_listing(
     .bind(req.supply_total) // supply_remaining = supply_total initially
     .bind(now_ms)
     .bind(now_ms)
+    .bind(&req.manifest_id)
+    .bind(&req.title)
+    .bind(&req.artist)
+    .bind(&req.cover_url)
     .execute(&state.db)
     .await
     .map_err(|e| {
@@ -289,6 +298,10 @@ fn listing_to_response(l: &Listing) -> ListingResponse {
         created_at_ms: l.created_at_ms,
         updated_at_ms: l.updated_at_ms,
         is_alive: l.is_alive == 1,
+        manifest_id: l.manifest_id.clone(),
+        title: l.title.clone(),
+        artist: l.artist.clone(),
+        cover_url: l.cover_url.clone(),
     }
 }
 

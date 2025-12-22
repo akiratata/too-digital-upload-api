@@ -95,6 +95,11 @@ pub struct Listing {
     pub created_at_ms: Option<i64>,
     pub updated_at_ms: Option<i64>,
     pub is_alive: i32,
+    // メタデータフィールド
+    pub manifest_id: Option<String>,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub cover_url: Option<String>,
 }
 
 /// Listing 作成リクエスト
@@ -112,6 +117,11 @@ pub struct CreateListingRequest {
     pub currency: String,
     #[serde(default = "default_supply")]
     pub supply_total: i64,
+    // メタデータフィールド
+    pub manifest_id: Option<String>,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub cover_url: Option<String>,
 }
 
 fn default_currency() -> String { "SUI".to_string() }
@@ -143,6 +153,11 @@ pub struct ListingResponse {
     pub created_at_ms: Option<i64>,
     pub updated_at_ms: Option<i64>,
     pub is_alive: bool,
+    // メタデータフィールド
+    pub manifest_id: Option<String>,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub cover_url: Option<String>,
 }
 
 // ========================================
