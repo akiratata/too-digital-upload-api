@@ -1,5 +1,5 @@
 //! Database Module
-//! SQLite を使用した vendors/listings/receipts の管理
+//! SQLite を使用した vendors/listings/receipts/artists の管理
 
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use anyhow::Result;
@@ -61,14 +61,18 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     .execute(pool)
     .await?;
 
-    // artists テーブル（vendors と同型）
+    // artists テーブル（peer_id 対応）
     sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS artists (
             stable_id TEXT PRIMARY KEY,
+            peer_id TEXT NOT NULL,
+            peer_id_sha256 TEXT,
             latest_object_id TEXT,
             owner TEXT,
-            manifest_url TEXT,
-            manifest_sha256 TEXT,
+            profile_url TEXT,
+            profile_sha256 TEXT,
+            discography_url TEXT,
+            discography_sha256 TEXT,
             profile_seq INTEGER NOT NULL DEFAULT 0,
             status INTEGER NOT NULL DEFAULT 0,
             env TEXT NOT NULL DEFAULT 'devnet',
@@ -76,6 +80,31 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
             created_at_ms INTEGER,
             updated_at_ms INTEGER,
             is_alive INTEGER NOT NULL DEFAULT 1
+        )
+    "#)
+    .execute(pool)
+    .await?;
+
+    // artists の peer_id ユニーク インデックス
+    sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_artists_peer_id ON artists(peer_id)")
+        .execute(pool).await?;
+
+    // discography テーブル（アーティスト ↔ アルバム紐付け）
+    sqlx::query(r#"
+        CREATE TABLE IF NOT EXISTS discography (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            artist_stable_id TEXT NOT NULL,
+            album_id TEXT NOT NULL,
+            edition_id TEXT,
+            title TEXT,
+            cover_thumb_url TEXT,
+            track_count INTEGER NOT NULL DEFAULT 0,
+            track_preview TEXT,
+            role TEXT NOT NULL DEFAULT 'main',
+            deployed_at_ms INTEGER,
+            created_at_ms INTEGER,
+            FOREIGN KEY (artist_stable_id) REFERENCES artists(stable_id),
+            UNIQUE(artist_stable_id, album_id)
         )
     "#)
     .execute(pool)
@@ -143,6 +172,10 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
 
     // インデックス作成
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vendors_is_alive ON vendors(is_alive)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_artists_is_alive ON artists(is_alive)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_discography_artist ON discography(artist_stable_id)")
         .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_listings_vendor ON listings(vendor_stable_id)")
         .execute(pool).await?;

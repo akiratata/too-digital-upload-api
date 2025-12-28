@@ -405,6 +405,15 @@ async fn main() {
         .route("/api/listings/:listing_id", get(handlers::listings::get_listing))
         .route("/api/listings/:listing_id", put(handlers::listings::update_listing))
         .route("/api/listings/:listing_id", delete(handlers::listings::delete_listing))
+        // Artists API (Account)
+        .route("/api/account/artists", get(handlers::artists::list_artists))
+        .route("/api/account/artists", post(handlers::artists::create_artist))
+        .route("/api/account/artists/:stable_id", get(handlers::artists::get_artist))
+        .route("/api/account/artists/:stable_id", put(handlers::artists::update_artist))
+        .route("/api/account/artists/:stable_id/icon", post(handlers::artists::upload_artist_icon))
+        .route("/api/account/artists/:stable_id/discography", get(handlers::artists::get_discography))
+        .route("/api/account/artists/:stable_id/discography", post(handlers::artists::add_discography))
+        .route("/api/account/artists/by-peer/:peer_id", get(handlers::artists::get_artist_by_peer))
         // ミドルウェア
         .layer(DefaultBodyLimit::max(800 * 1024 * 1024)) // 800MB まで許可
         .layer(CorsLayer::permissive())

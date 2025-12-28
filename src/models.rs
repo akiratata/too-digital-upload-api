@@ -220,3 +220,172 @@ pub mod mode {
     pub const TEST_VENDOR: i32 = 0;
     pub const PROD_VENDOR: i32 = 1;
 }
+
+// ========================================
+// Artist
+// ========================================
+
+/// Artist (DB row)
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Artist {
+    pub stable_id: String,
+    pub peer_id: String,
+    pub peer_id_sha256: Option<String>,
+    pub latest_object_id: Option<String>,
+    pub owner: Option<String>,
+    pub profile_url: Option<String>,
+    pub profile_sha256: Option<String>,
+    pub discography_url: Option<String>,
+    pub discography_sha256: Option<String>,
+    pub profile_seq: i64,
+    pub status: i32,
+    pub env: String,
+    pub run_id: Option<String>,
+    pub created_at_ms: Option<i64>,
+    pub updated_at_ms: Option<i64>,
+    pub is_alive: i32,
+}
+
+/// Artist Profile (profile.json の中身)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtistProfile {
+    pub version: String,
+    pub stable_id: String,
+    pub name: String,
+    pub bio: Option<String>,
+    pub icon_url: Option<String>,
+    #[serde(default)]
+    pub links: Vec<serde_json::Value>,
+    pub p2p: Option<ArtistP2P>,
+    pub updated_at_ms: i64,
+}
+
+/// Artist P2P info
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtistP2P {
+    pub peer_id: String,
+    pub peer_id_sha256: Option<String>,
+}
+
+/// Artist 作成リクエスト
+#[derive(Debug, Deserialize)]
+pub struct CreateArtistRequest {
+    pub peer_id: String,
+    pub name: String,
+    pub bio: Option<String>,
+    pub owner: Option<String>,
+    #[serde(default = "default_env")]
+    pub env: String,
+}
+
+fn default_env() -> String { "devnet".to_string() }
+
+/// Artist 更新リクエスト
+#[derive(Debug, Deserialize)]
+pub struct UpdateArtistRequest {
+    pub object_id: Option<String>,
+    pub owner: Option<String>,
+    pub name: Option<String>,
+    pub bio: Option<String>,
+    pub status: Option<i32>,
+}
+
+/// Artist レスポンス（API返却用）
+#[derive(Debug, Serialize)]
+pub struct ArtistResponse {
+    pub stable_id: String,
+    pub peer_id: String,
+    pub object_id: Option<String>,
+    pub owner: Option<String>,
+    pub profile: Option<ArtistProfile>,
+    pub profile_url: Option<String>,
+    pub profile_sha256: Option<String>,
+    pub discography_url: Option<String>,
+    pub discography_sha256: Option<String>,
+    pub profile_seq: i64,
+    pub status: i32,
+    pub created_at_ms: Option<i64>,
+    pub updated_at_ms: Option<i64>,
+    pub is_alive: bool,
+}
+
+/// Artist 作成レスポンス
+#[derive(Debug, Serialize)]
+pub struct ArtistCreateResponse {
+    pub success: bool,
+    pub stable_id: String,
+    pub peer_id: String,
+    pub profile_url: String,
+    pub profile_sha256: String,
+    pub discography_url: String,
+    pub discography_sha256: String,
+    pub icon_url: Option<String>,
+    pub updated_at_ms: i64,
+}
+
+// ========================================
+// Discography
+// ========================================
+
+/// Discography Entry (DB row)
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct DiscographyEntry {
+    pub id: i64,
+    pub artist_stable_id: String,
+    pub album_id: String,
+    pub edition_id: Option<String>,
+    pub title: Option<String>,
+    pub cover_thumb_url: Option<String>,
+    pub track_count: i64,
+    pub track_preview: Option<String>,
+    pub role: String,
+    pub deployed_at_ms: Option<i64>,
+    pub created_at_ms: Option<i64>,
+}
+
+/// Track Preview (discography.json 内の track_preview)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackPreview {
+    pub i: i32,
+    pub title: String,
+}
+
+/// Discography JSON (discography.json の中身)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscographyJson {
+    pub version: String,
+    pub artist_stable_id: String,
+    pub albums: Vec<DiscographyAlbum>,
+    pub updated_at_ms: i64,
+}
+
+/// Discography Album Entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscographyAlbum {
+    pub album_id: String,
+    pub edition_id: Option<String>,
+    pub title: Option<String>,
+    pub cover_thumb_url: Option<String>,
+    pub track_count: i64,
+    pub track_preview: Vec<TrackPreview>,
+    pub deployed_at_ms: Option<i64>,
+    pub role: String,
+}
+
+/// Discography 追加リクエスト
+#[derive(Debug, Deserialize)]
+pub struct AddDiscographyRequest {
+    pub album_id: String,
+    pub edition_id: Option<String>,
+    pub title: Option<String>,
+    pub cover_thumb_url: Option<String>,
+    #[serde(default)]
+    pub track_count: i64,
+    #[serde(default)]
+    pub track_preview: Vec<TrackPreview>,
+    #[serde(default = "default_role")]
+    pub role: String,
+    pub deployed_at_ms: Option<i64>,
+}
+
+fn default_role() -> String { "main".to_string() }
