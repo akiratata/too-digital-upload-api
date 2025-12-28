@@ -13,8 +13,9 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tracing::{info, warn};
 use sha2::{Sha256, Digest};
+use base32;
+use rand::Rng;
 
-use crate::db::DbPool;
 use crate::models::{
     CreateVendorRequest, UpdateVendorRequest, Vendor, VendorProfile, VendorResponse,
 };
@@ -41,6 +42,7 @@ pub struct VendorDetailResponse {
 pub struct VendorCreateResponse {
     pub success: bool,
     pub stable_id: String,
+    pub peer_id: String,
     pub manifest_url: String,
     pub manifest_sha256: String,
 }
@@ -109,6 +111,33 @@ pub async fn get_vendor(
     }
 }
 
+/// GET /api/vendors/by-peer/:peer_id - peer_idでVendor検索
+pub async fn get_vendor_by_peer(
+    State(state): State<Arc<AppState>>,
+    Path(peer_id): Path<String>,
+) -> Result<Json<VendorDetailResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let vendor: Option<Vendor> = sqlx::query_as(
+        "SELECT * FROM vendors WHERE peer_id = ? AND is_alive = 1"
+    )
+    .bind(&peer_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| {
+        error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))
+    })?;
+
+    match vendor {
+        Some(v) => {
+            let profile = load_vendor_profile(&state.base_data_dir, &v.stable_id).await.ok();
+            Ok(Json(VendorDetailResponse {
+                success: true,
+                vendor: Some(vendor_to_response(&v, profile)),
+            }))
+        }
+        None => Err(error_response(StatusCode::NOT_FOUND, "Vendor not found for this peer_id".to_string())),
+    }
+}
+
 /// POST /api/vendors - Vendor作成
 pub async fn create_vendor(
     State(state): State<Arc<AppState>>,
@@ -116,11 +145,52 @@ pub async fn create_vendor(
 ) -> Result<Json<VendorCreateResponse>, (StatusCode, Json<ErrorResponse>)> {
     let now_ms = chrono::Utc::now().timestamp_millis();
 
+    // 既存チェック（peer_idで）
+    let existing: Option<Vendor> = sqlx::query_as(
+        "SELECT * FROM vendors WHERE peer_id = ?"
+    )
+    .bind(&req.peer_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| {
+        error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))
+    })?;
+
+    if let Some(v) = existing {
+        // 既存のVendorを返す
+        let profile = load_vendor_profile(&state.base_data_dir, &v.stable_id).await.ok();
+        return Ok(Json(VendorCreateResponse {
+            success: true,
+            stable_id: v.stable_id,
+            peer_id: req.peer_id,
+            manifest_url: v.manifest_url.unwrap_or_default(),
+            manifest_sha256: v.manifest_sha256.unwrap_or_default(),
+        }));
+    }
+
+    // stable_id を生成（VENDOR_XXXXXXXX形式）
+    let stable_id = req.stable_id.unwrap_or_else(|| generate_stable_id("VENDOR"));
+
+    // peer_id の SHA256
+    let peer_id_sha256 = {
+        let mut hasher = Sha256::new();
+        hasher.update(req.peer_id.as_bytes());
+        hex::encode(hasher.finalize())
+    };
+
+    // ディレクトリ作成
+    let vendor_dir = PathBuf::from(&state.base_data_dir)
+        .join("vendors")
+        .join(&stable_id);
+    fs::create_dir_all(&vendor_dir).await.map_err(|e| {
+        error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create dir: {}", e))
+    })?;
+
     // profile.json を保存
     let (manifest_url, manifest_sha256) = save_vendor_profile(
         &state.base_data_dir,
         &state.vps_base_url,
-        &req.stable_id,
+        &stable_id,
         &req.profile,
     )
     .await
@@ -131,25 +201,21 @@ pub async fn create_vendor(
     // DBに挿入
     sqlx::query(r#"
         INSERT INTO vendors (
-            stable_id, latest_object_id, owner, mode,
+            stable_id, peer_id, peer_id_sha256, latest_object_id, owner, mode, shop_type,
             manifest_url, manifest_sha256, profile_seq,
             status, env, created_at_ms, updated_at_ms, is_alive
-        ) VALUES (?, ?, ?, ?, ?, ?, 1, 0, 'devnet', ?, ?, 1)
-        ON CONFLICT(stable_id) DO UPDATE SET
-            latest_object_id = excluded.latest_object_id,
-            owner = excluded.owner,
-            manifest_url = excluded.manifest_url,
-            manifest_sha256 = excluded.manifest_sha256,
-            profile_seq = vendors.profile_seq + 1,
-            updated_at_ms = excluded.updated_at_ms,
-            is_alive = 1
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, 1)
     "#)
-    .bind(&req.stable_id)
+    .bind(&stable_id)
+    .bind(&req.peer_id)
+    .bind(&peer_id_sha256)
     .bind(&req.object_id)
     .bind(&req.owner)
     .bind(req.mode)
+    .bind(req.shop_type)
     .bind(&manifest_url)
     .bind(&manifest_sha256)
+    .bind(&req.env)
     .bind(now_ms)
     .bind(now_ms)
     .execute(&state.db)
@@ -158,11 +224,12 @@ pub async fn create_vendor(
         error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))
     })?;
 
-    info!("Vendor created: stable_id={}", req.stable_id);
+    info!("Vendor created: stable_id={}, peer_id={}", stable_id, req.peer_id);
 
     Ok(Json(VendorCreateResponse {
         success: true,
-        stable_id: req.stable_id,
+        stable_id,
+        peer_id: req.peer_id,
         manifest_url,
         manifest_sha256,
     }))
@@ -187,9 +254,10 @@ pub async fn update_vendor(
         error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))
     })?;
 
-    if existing.is_none() {
-        return Err(error_response(StatusCode::NOT_FOUND, "Vendor not found".to_string()));
-    }
+    let v = match existing {
+        Some(v) => v,
+        None => return Err(error_response(StatusCode::NOT_FOUND, "Vendor not found".to_string())),
+    };
 
     let (manifest_url, manifest_sha256) = if let Some(profile) = &req.profile {
         save_vendor_profile(
@@ -203,8 +271,7 @@ pub async fn update_vendor(
             error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save profile: {}", e))
         })?
     } else {
-        let v = existing.unwrap();
-        (v.manifest_url.unwrap_or_default(), v.manifest_sha256.unwrap_or_default())
+        (v.manifest_url.clone().unwrap_or_default(), v.manifest_sha256.clone().unwrap_or_default())
     };
 
     // DB更新
@@ -237,6 +304,7 @@ pub async fn update_vendor(
     Ok(Json(VendorCreateResponse {
         success: true,
         stable_id,
+        peer_id: v.peer_id.unwrap_or_default(),
         manifest_url,
         manifest_sha256,
     }))
@@ -297,6 +365,13 @@ pub async fn upload_vendor_icon(
 // Helper Functions
 // ========================================
 
+/// stable_id を生成（PREFIX_XXXXXXXX形式）
+fn generate_stable_id(prefix: &str) -> String {
+    let random_bytes: [u8; 5] = rand::thread_rng().gen();
+    let encoded = base32::encode(base32::Alphabet::Crockford, &random_bytes);
+    format!("{}_{}", prefix, &encoded[..8])
+}
+
 /// VendorProfile を保存して URL と SHA256 を返す
 async fn save_vendor_profile(
     base_dir: &str,
@@ -344,9 +419,11 @@ async fn load_vendor_profile(base_dir: &str, stable_id: &str) -> anyhow::Result<
 fn vendor_to_response(v: &Vendor, profile: Option<VendorProfile>) -> VendorResponse {
     VendorResponse {
         stable_id: v.stable_id.clone(),
+        peer_id: v.peer_id.clone(),
         object_id: v.latest_object_id.clone(),
         owner: v.owner.clone(),
         mode: v.mode,
+        shop_type: v.shop_type,
         profile,
         profile_seq: v.profile_seq,
         status: v.status,

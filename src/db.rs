@@ -40,13 +40,16 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     .execute(pool)
     .await?;
 
-    // vendors テーブル
+    // vendors テーブル（peer_id + shop_type 対応）
     sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS vendors (
             stable_id TEXT PRIMARY KEY,
+            peer_id TEXT,
+            peer_id_sha256 TEXT,
             latest_object_id TEXT,
             owner TEXT,
             mode INTEGER NOT NULL DEFAULT 0,
+            shop_type INTEGER NOT NULL DEFAULT 0,
             manifest_url TEXT,
             manifest_sha256 TEXT,
             profile_seq INTEGER NOT NULL DEFAULT 0,
@@ -60,6 +63,10 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     "#)
     .execute(pool)
     .await?;
+
+    // vendors の peer_id インデックス
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_vendors_peer_id ON vendors(peer_id)")
+        .execute(pool).await.ok();  // 既存テーブルでは失敗してもOK
 
     // artists テーブル（peer_id 対応）
     sqlx::query(r#"

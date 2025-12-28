@@ -11,9 +11,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Vendor {
     pub stable_id: String,
+    pub peer_id: Option<String>,
+    pub peer_id_sha256: Option<String>,
     pub latest_object_id: Option<String>,
     pub owner: Option<String>,
     pub mode: i32,
+    pub shop_type: i32,  // 0=in_app, 1=external_web
     pub manifest_url: Option<String>,
     pub manifest_sha256: Option<String>,
     pub profile_seq: i64,
@@ -40,12 +43,17 @@ pub struct VendorProfile {
 /// Vendor 作成リクエスト
 #[derive(Debug, Deserialize)]
 pub struct CreateVendorRequest {
-    pub stable_id: String,
+    pub stable_id: Option<String>,  // 指定しない場合は自動生成
+    pub peer_id: String,
     pub object_id: Option<String>,
     pub owner: Option<String>,
     #[serde(default)]
     pub mode: i32,
+    #[serde(default)]
+    pub shop_type: i32,  // 0=in_app, 1=external_web
     pub profile: VendorProfile,
+    #[serde(default = "default_env")]
+    pub env: String,
 }
 
 /// Vendor 更新リクエスト
@@ -61,9 +69,11 @@ pub struct UpdateVendorRequest {
 #[derive(Debug, Serialize)]
 pub struct VendorResponse {
     pub stable_id: String,
+    pub peer_id: Option<String>,
     pub object_id: Option<String>,
     pub owner: Option<String>,
     pub mode: i32,
+    pub shop_type: i32,
     pub profile: Option<VendorProfile>,
     pub profile_seq: i64,
     pub status: i32,
@@ -219,6 +229,11 @@ pub mod item_type {
 pub mod mode {
     pub const TEST_VENDOR: i32 = 0;
     pub const PROD_VENDOR: i32 = 1;
+}
+
+pub mod shop_type {
+    pub const IN_APP: i32 = 0;
+    pub const EXTERNAL_WEB: i32 = 1;
 }
 
 // ========================================

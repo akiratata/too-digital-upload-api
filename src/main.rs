@@ -399,6 +399,7 @@ async fn main() {
         .route("/api/vendors/:stable_id", get(handlers::vendors::get_vendor))
         .route("/api/vendors/:stable_id", put(handlers::vendors::update_vendor))
         .route("/api/vendors/:stable_id/icon", post(handlers::vendors::upload_vendor_icon))
+        .route("/api/vendors/by-peer/:peer_id", get(handlers::vendors::get_vendor_by_peer))
         // Listings API
         .route("/api/listings", get(handlers::listings::list_listings))
         .route("/api/listings", post(handlers::listings::create_listing))
