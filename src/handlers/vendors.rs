@@ -393,6 +393,20 @@ pub async fn upload_vendor_icon(
             let icon_url = format!("{}/vendors/{}/{}", state.vps_base_url, stable_id, icon_filename);
             info!("Icon uploaded: {}", icon_url);
 
+            // profile.json の icon_url を更新
+            let profile_path = dir.join("profile.json");
+            if profile_path.exists() {
+                if let Ok(content) = fs::read_to_string(&profile_path).await {
+                    if let Ok(mut profile) = serde_json::from_str::<VendorProfile>(&content) {
+                        profile.icon_url = Some(icon_url.clone());
+                        if let Ok(updated_json) = serde_json::to_string_pretty(&profile) {
+                            let _ = fs::write(&profile_path, updated_json).await;
+                            info!("Profile updated with icon_url: {}", icon_url);
+                        }
+                    }
+                }
+            }
+
             return Ok(Json(serde_json::json!({
                 "success": true,
                 "icon_url": icon_url,
