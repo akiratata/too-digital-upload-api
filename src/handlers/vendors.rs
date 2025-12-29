@@ -145,9 +145,9 @@ pub async fn create_vendor(
 ) -> Result<Json<VendorCreateResponse>, (StatusCode, Json<ErrorResponse>)> {
     let now_ms = chrono::Utc::now().timestamp_millis();
 
-    // 既存チェック（peer_idで）
+    // 既存チェック（peer_idで、is_alive=1のみ）
     let existing: Option<Vendor> = sqlx::query_as(
-        "SELECT * FROM vendors WHERE peer_id = ?"
+        "SELECT * FROM vendors WHERE peer_id = ? AND is_alive = 1"
     )
     .bind(&req.peer_id)
     .fetch_optional(&state.db)
@@ -157,8 +157,7 @@ pub async fn create_vendor(
     })?;
 
     if let Some(v) = existing {
-        // 既存のVendorを返す
-        let profile = load_vendor_profile(&state.base_data_dir, &v.stable_id).await.ok();
+        // 既存のアクティブなVendorを返す
         return Ok(Json(VendorCreateResponse {
             success: true,
             stable_id: v.stable_id,
@@ -308,6 +307,50 @@ pub async fn update_vendor(
         manifest_url,
         manifest_sha256,
     }))
+}
+
+/// DELETE /api/vendors/:stable_id - Vendorをデリスト（論理削除）
+pub async fn delist_vendor(
+    State(state): State<Arc<AppState>>,
+    Path(stable_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+
+    // 既存チェック
+    let existing: Option<Vendor> = sqlx::query_as(
+        "SELECT * FROM vendors WHERE stable_id = ?"
+    )
+    .bind(&stable_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| {
+        error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))
+    })?;
+
+    match existing {
+        Some(v) => {
+            // is_alive を 0 に設定（論理削除）
+            sqlx::query(
+                "UPDATE vendors SET is_alive = 0, updated_at_ms = ? WHERE stable_id = ?"
+            )
+            .bind(now_ms)
+            .bind(&stable_id)
+            .execute(&state.db)
+            .await
+            .map_err(|e| {
+                error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))
+            })?;
+
+            info!("Vendor delisted: stable_id={}, peer_id={:?}", stable_id, v.peer_id);
+
+            Ok(Json(serde_json::json!({
+                "success": true,
+                "stable_id": stable_id,
+                "message": "Vendor delisted successfully"
+            })))
+        }
+        None => Err(error_response(StatusCode::NOT_FOUND, "Vendor not found".to_string())),
+    }
 }
 
 /// POST /api/vendors/:stable_id/icon - アイコンアップロード
