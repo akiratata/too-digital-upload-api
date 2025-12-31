@@ -404,3 +404,152 @@ pub struct AddDiscographyRequest {
 }
 
 fn default_role() -> String { "main".to_string() }
+
+// ========================================
+// Drop (期限付きファイル配信)
+// ========================================
+
+/// Drop ステータス
+pub mod drop_status {
+    pub const SCHEDULED: i32 = 0;
+    pub const ACTIVE: i32 = 1;
+    pub const ENDED: i32 = 2;
+    pub const PURGED: i32 = 3;
+}
+
+/// Drop (DB row)
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Drop {
+    pub drop_id: String,
+    pub vendor_stable_id: String,
+    pub artist_stable_id: Option<String>,
+    pub artist_name: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub cover_object_key: Option<String>,
+    pub audio_object_key: String,
+    pub audio_mime: String,
+    pub audio_size_bytes: i64,
+    pub audio_sha256: String,
+    pub start_at: i64,      // Unix秒
+    pub end_at: i64,        // Unix秒
+    pub max_claims: i64,
+    pub claimed_count: i64,
+    pub status: i32,
+    pub env: String,
+    pub run_id: Option<String>,
+    pub created_at: i64,    // Unix秒
+    pub updated_at: i64,    // Unix秒
+    pub ended_at: Option<i64>,   // Unix秒
+    pub purged_at: Option<i64>,  // Unix秒
+}
+
+/// Drop 作成リクエスト
+#[derive(Debug, Deserialize)]
+pub struct CreateDropRequest {
+    pub vendor_stable_id: String,
+    pub artist_stable_id: Option<String>,
+    pub artist_name: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub start_at: Option<i64>,  // 省略時は現在時刻
+    pub end_at: i64,            // 必須
+    pub max_claims: i64,        // 必須
+    #[serde(default = "default_env")]
+    pub env: String,
+}
+
+/// Drop レスポンス
+#[derive(Debug, Serialize)]
+pub struct DropResponse {
+    pub drop_id: String,
+    pub vendor_stable_id: String,
+    pub artist_stable_id: Option<String>,
+    pub artist_name: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub cover_url: Option<String>,
+    pub audio_mime: String,
+    pub audio_size_bytes: i64,
+    pub audio_sha256: String,
+    pub start_at: i64,
+    pub end_at: i64,
+    pub max_claims: i64,
+    pub claimed_count: i64,
+    pub remaining_claims: i64,
+    pub status: i32,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub ended_at: Option<i64>,
+}
+
+impl DropResponse {
+    pub fn from_drop(drop: &Drop, base_url: &str) -> Self {
+        let cover_url = drop.cover_object_key.as_ref().map(|key| {
+            format!("{}/drops/{}", base_url, key)
+        });
+        Self {
+            drop_id: drop.drop_id.clone(),
+            vendor_stable_id: drop.vendor_stable_id.clone(),
+            artist_stable_id: drop.artist_stable_id.clone(),
+            artist_name: drop.artist_name.clone(),
+            title: drop.title.clone(),
+            description: drop.description.clone(),
+            cover_url,
+            audio_mime: drop.audio_mime.clone(),
+            audio_size_bytes: drop.audio_size_bytes,
+            audio_sha256: drop.audio_sha256.clone(),
+            start_at: drop.start_at,
+            end_at: drop.end_at,
+            max_claims: drop.max_claims,
+            claimed_count: drop.claimed_count,
+            remaining_claims: drop.max_claims - drop.claimed_count,
+            status: drop.status,
+            created_at: drop.created_at,
+            updated_at: drop.updated_at,
+            ended_at: drop.ended_at,
+        }
+    }
+}
+
+/// Drop Claim (DB row)
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct DropClaim {
+    pub claim_id: String,
+    pub drop_id: String,
+    pub user_id: String,
+    pub device_id_hash: Option<String>,
+    pub claimed_at: i64,    // Unix秒
+}
+
+/// Drop Claim リクエスト
+#[derive(Debug, Deserialize)]
+pub struct ClaimDropRequest {
+    pub user_id: String,
+    pub device_id_hash: Option<String>,
+}
+
+/// Drop Claim レスポンス
+#[derive(Debug, Serialize)]
+pub struct ClaimDropResponse {
+    pub success: bool,
+    pub claim_id: String,
+    pub drop_id: String,
+    pub download_url: String,
+    pub expires_at: i64,
+    pub audio_sha256: String,
+    pub audio_size_bytes: i64,
+}
+
+/// Batch 終了/削除リクエスト
+#[derive(Debug, Deserialize)]
+pub struct BatchDropRequest {
+    pub drop_ids: Vec<String>,
+}
+
+/// Batch レスポンス
+#[derive(Debug, Serialize)]
+pub struct BatchDropResponse {
+    pub success: bool,
+    pub results: std::collections::HashMap<String, bool>,
+}

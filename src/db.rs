@@ -177,6 +177,52 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     .execute(pool)
     .await?;
 
+    // drops テーブル（期限付きファイル配信）
+    sqlx::query(r#"
+        CREATE TABLE IF NOT EXISTS drops (
+            drop_id TEXT PRIMARY KEY,
+            vendor_stable_id TEXT NOT NULL,
+            artist_stable_id TEXT,
+            artist_name TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            cover_object_key TEXT,
+            audio_object_key TEXT NOT NULL,
+            audio_mime TEXT NOT NULL DEFAULT 'audio/mpeg',
+            audio_size_bytes INTEGER NOT NULL DEFAULT 0,
+            audio_sha256 TEXT NOT NULL,
+            start_at INTEGER NOT NULL,
+            end_at INTEGER NOT NULL,
+            max_claims INTEGER NOT NULL,
+            claimed_count INTEGER NOT NULL DEFAULT 0,
+            status INTEGER NOT NULL DEFAULT 0,
+            env TEXT NOT NULL DEFAULT 'devnet',
+            run_id TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            ended_at INTEGER,
+            purged_at INTEGER,
+            FOREIGN KEY (vendor_stable_id) REFERENCES vendors(stable_id)
+        )
+    "#)
+    .execute(pool)
+    .await?;
+
+    // drop_claims テーブル（先着管理）
+    sqlx::query(r#"
+        CREATE TABLE IF NOT EXISTS drop_claims (
+            claim_id TEXT PRIMARY KEY,
+            drop_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            device_id_hash TEXT,
+            claimed_at INTEGER NOT NULL,
+            FOREIGN KEY (drop_id) REFERENCES drops(drop_id),
+            UNIQUE(drop_id, user_id)
+        )
+    "#)
+    .execute(pool)
+    .await?;
+
     // インデックス作成
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vendors_is_alive ON vendors(is_alive)")
         .execute(pool).await?;
@@ -191,6 +237,18 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_receipts_buyer ON receipts(buyer)")
         .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_receipts_listing ON receipts(listing_id)")
+        .execute(pool).await?;
+
+    // drops インデックス
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_drops_vendor ON drops(vendor_stable_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_drops_status ON drops(status)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_drops_end_at ON drops(end_at)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_drop_claims_drop ON drop_claims(drop_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_drop_claims_user ON drop_claims(user_id)")
         .execute(pool).await?;
 
     Ok(())

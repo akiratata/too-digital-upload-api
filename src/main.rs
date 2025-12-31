@@ -416,6 +416,14 @@ async fn main() {
         .route("/api/account/artists/:stable_id/discography", get(handlers::artists::get_discography))
         .route("/api/account/artists/:stable_id/discography", post(handlers::artists::add_discography))
         .route("/api/account/artists/by-peer/:peer_id", get(handlers::artists::get_artist_by_peer))
+        // Drops API
+        .route("/api/vendors/:vendor_stable_id/drops", get(handlers::drops::list_drops))
+        .route("/api/vendors/:vendor_stable_id/drops/batch_end", post(handlers::drops::batch_end_drops))
+        .route("/api/vendors/:vendor_stable_id/drops/batch_purge", post(handlers::drops::batch_purge_drops))
+        .route("/api/drops", post(handlers::drops::create_drop))
+        .route("/api/drops/:drop_id", get(handlers::drops::get_drop))
+        .route("/api/drops/:drop_id/claim", post(handlers::drops::claim_drop))
+        .route("/api/drops/:drop_id/download", get(handlers::drops::download_drop))
         // ミドルウェア
         .layer(DefaultBodyLimit::max(800 * 1024 * 1024)) // 800MB まで許可
         .layer(CorsLayer::permissive())
@@ -425,6 +433,27 @@ async fn main() {
     info!("NFT Upload API Server v0.2.0 listening on {}", addr);
     info!("Max body size: 800MB");
     info!("Database: {}", db_path);
+
+    // 期限切れDrops処理のバックグラウンドジョブ（1時間ごと）
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            info!("[Job] Running expired drops check...");
+
+            // 期限切れDropsをENDED状態に更新
+            if let Err(e) = handlers::drops::expire_drops(&state_clone).await {
+                warn!("[Job] expire_drops error: {:?}", e);
+            }
+
+            // 7日以上前にENDEDになったDropsをpurge（ファイル削除）
+            // grace_seconds = 7 * 24 * 3600 = 604800 (7日)
+            if let Err(e) = handlers::drops::purge_ended_drops(&state_clone, 604800).await {
+                warn!("[Job] purge_ended_drops error: {:?}", e);
+            }
+        }
+    });
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
