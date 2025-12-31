@@ -609,7 +609,7 @@ pub async fn batch_purge_drops(
             .ok()
             .flatten();
 
-        if let Some(d) = drop {
+        if let Some(_d) = drop {
             // ファイル削除
             let dir = PathBuf::from(&state.base_data_dir).join("drops").join(drop_id);
             let _ = fs::remove_dir_all(&dir).await;

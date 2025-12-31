@@ -427,7 +427,7 @@ async fn main() {
         // ミドルウェア
         .layer(DefaultBodyLimit::max(800 * 1024 * 1024)) // 800MB まで許可
         .layer(CorsLayer::permissive())
-        .with_state(state);
+        .with_state(state.clone());
 
     let addr = "0.0.0.0:3000";
     info!("NFT Upload API Server v0.2.0 listening on {}", addr);
@@ -435,7 +435,7 @@ async fn main() {
     info!("Database: {}", db_path);
 
     // 期限切れDrops処理のバックグラウンドジョブ（1時間ごと）
-    let state_clone = state.clone();
+    let state_clone = state;
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
         loop {
