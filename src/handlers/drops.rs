@@ -300,7 +300,17 @@ pub async fn create_drop(
     // SHA256計算
     let audio_sha256 = compute_sha256(&audio_data);
     let audio_size_bytes = audio_data.len() as i64;
-    let audio_mime = audio_mime.unwrap_or_else(|| "audio/mpeg".to_string());
+    let audio_mime = audio_mime.unwrap_or_else(|| {
+        // 拡張子からMIMEタイプを推測
+        match audio_ext {
+            "flac" => "audio/flac".to_string(),
+            "wav" => "audio/wav".to_string(),
+            "ogg" => "audio/ogg".to_string(),
+            "aac" => "audio/aac".to_string(),
+            "m4a" => "audio/mp4".to_string(),
+            _ => "audio/mpeg".to_string(),
+        }
+    });
 
     // カバー画像保存（任意）
     let cover_object_key = if let Some(cover) = cover_data {
