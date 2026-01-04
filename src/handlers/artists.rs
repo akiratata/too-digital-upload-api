@@ -376,7 +376,7 @@ pub async fn upload_artist_icon(
                 error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create dir: {}", e))
             })?;
 
-            // ファイル保存
+            // オリジナルファイル保存
             let icon_filename = format!("icon.{}", ext);
             let path = dir.join(&icon_filename);
             let mut file = fs::File::create(&path).await.map_err(|e| {
@@ -386,12 +386,32 @@ pub async fn upload_artist_icon(
                 error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write file: {}", e))
             })?;
 
-            // icon_url を profile.json に更新
+            // サムネイル生成（200x200、PFP用の正方形）
+            let thumb_filename = format!("icon_thumb.{}", ext);
+            let thumb_path = dir.join(&thumb_filename);
+            let data_clone = data.to_vec();
+            let thumb_path_clone = thumb_path.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                if let Ok(img) = image::load_from_memory(&data_clone) {
+                    // Lanczos3で高品質リサイズ、200x200正方形
+                    let thumb = img.resize_to_fill(200, 200, image::imageops::FilterType::Lanczos3);
+                    let _ = thumb.save(&thumb_path_clone);
+                    info!("Icon thumbnail generated: {:?}", thumb_path_clone);
+                }
+            }).await;
+
+            // icon_url を profile.json に更新（サムネイルURLも含む）
             let icon_url = format!(
                 "{}/account/artists/{}/{}",
                 state.vps_base_url.replace("/nft", ""),
                 stable_id,
                 icon_filename
+            );
+            let icon_thumb_url = format!(
+                "{}/account/artists/{}/{}",
+                state.vps_base_url.replace("/nft", ""),
+                stable_id,
+                thumb_filename
             );
 
             // profile.json を更新
@@ -406,11 +426,12 @@ pub async fn upload_artist_icon(
                 ).await;
             }
 
-            info!("Icon uploaded: {}", icon_url);
+            info!("Icon uploaded: {} (thumb: {})", icon_url, icon_thumb_url);
 
             return Ok(Json(serde_json::json!({
                 "success": true,
                 "icon_url": icon_url,
+                "icon_thumb_url": icon_thumb_url,
                 "path": path.to_string_lossy()
             })));
         }

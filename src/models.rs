@@ -17,6 +17,7 @@ pub struct Vendor {
     pub owner: Option<String>,
     pub mode: i32,
     pub shop_type: i32,  // 0=in_app, 1=external_web
+    pub backend: i32,    // 0=VPS, 1=Sui
     pub manifest_url: Option<String>,
     pub manifest_sha256: Option<String>,
     pub profile_seq: i64,
@@ -51,6 +52,8 @@ pub struct CreateVendorRequest {
     pub mode: i32,
     #[serde(default)]
     pub shop_type: i32,  // 0=in_app, 1=external_web
+    #[serde(default)]
+    pub backend: i32,    // 0=VPS, 1=Sui
     pub profile: VendorProfile,
     #[serde(default = "default_env")]
     pub env: String,
@@ -74,6 +77,7 @@ pub struct VendorResponse {
     pub owner: Option<String>,
     pub mode: i32,
     pub shop_type: i32,
+    pub backend: i32,    // 0=VPS, 1=Sui
     pub profile: Option<VendorProfile>,
     pub profile_seq: i64,
     pub status: i32,
@@ -469,6 +473,7 @@ pub struct DropResponse {
     pub title: String,
     pub description: Option<String>,
     pub cover_url: Option<String>,
+    pub cover_thumb_url: Option<String>,
     pub audio_mime: String,
     pub audio_size_bytes: i64,
     pub audio_sha256: String,
@@ -485,8 +490,20 @@ pub struct DropResponse {
 
 impl DropResponse {
     pub fn from_drop(drop: &Drop, base_url: &str) -> Self {
+        // カバーURLとサムネイルURLを生成
+        // cover_object_key: "DROP_XXX/cover.jpg" → URL: "{base_url}/drops/DROP_XXX/cover.jpg"
         let cover_url = drop.cover_object_key.as_ref().map(|key| {
             format!("{}/drops/{}", base_url, key)
+        });
+        // サムネイル: cover.jpg → cover_thumb.jpg
+        let cover_thumb_url = drop.cover_object_key.as_ref().map(|key| {
+            // "DROP_XXX/cover.jpg" → "DROP_XXX/cover_thumb.jpg"
+            if let Some(dot_pos) = key.rfind('.') {
+                let (base, ext) = key.split_at(dot_pos);
+                format!("{}/drops/{}_thumb{}", base_url, base, ext)
+            } else {
+                format!("{}/drops/{}_thumb", base_url, key)
+            }
         });
         Self {
             drop_id: drop.drop_id.clone(),
@@ -496,6 +513,7 @@ impl DropResponse {
             title: drop.title.clone(),
             description: drop.description.clone(),
             cover_url,
+            cover_thumb_url,
             audio_mime: drop.audio_mime.clone(),
             audio_size_bytes: drop.audio_size_bytes,
             audio_sha256: drop.audio_sha256.clone(),

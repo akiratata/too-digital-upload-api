@@ -312,20 +312,37 @@ pub async fn create_drop(
         }
     });
 
-    // カバー画像保存（任意）
+    // カバー画像保存（任意）+ サムネイル生成
     let cover_object_key = if let Some(cover) = cover_data {
         let cover_ext = cover_filename
             .as_ref()
             .and_then(|f| f.split('.').last())
-            .unwrap_or("jpg");
+            .unwrap_or("jpg")
+            .to_lowercase();
         let key = format!("{}/cover.{}", drop_id, cover_ext);
         let cover_path = dir.join(format!("cover.{}", cover_ext));
+        let thumb_path = dir.join(format!("cover_thumb.{}", cover_ext));
+
+        // オリジナル保存
         let mut file = fs::File::create(&cover_path).await.map_err(|e| {
             error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create cover file: {}", e))
         })?;
         file.write_all(&cover).await.map_err(|e| {
             error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write cover: {}", e))
         })?;
+
+        // サムネイル生成（400x400、高DPI対応、非同期でブロッキング処理）
+        let cover_clone = cover.clone();
+        let thumb_path_clone = thumb_path.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            if let Ok(img) = image::load_from_memory(&cover_clone) {
+                // Lanczos3で高品質リサイズ
+                let thumb = img.resize(400, 400, image::imageops::FilterType::Lanczos3);
+                let _ = thumb.save(&thumb_path_clone);
+                info!("Thumbnail generated: {:?}", thumb_path_clone);
+            }
+        }).await;
+
         Some(key)
     } else {
         None

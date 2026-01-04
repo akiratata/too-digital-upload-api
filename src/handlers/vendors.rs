@@ -201,10 +201,10 @@ pub async fn create_vendor(
     // DBに挿入
     sqlx::query(r#"
         INSERT INTO vendors (
-            stable_id, peer_id, peer_id_sha256, latest_object_id, owner, mode, shop_type,
+            stable_id, peer_id, peer_id_sha256, latest_object_id, owner, mode, shop_type, backend,
             manifest_url, manifest_sha256, profile_seq,
             status, env, created_at_ms, updated_at_ms, is_alive
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, 1)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, 1)
     "#)
     .bind(&stable_id)
     .bind(&req.peer_id)
@@ -213,6 +213,7 @@ pub async fn create_vendor(
     .bind(&req.owner)
     .bind(req.mode)
     .bind(req.shop_type)
+    .bind(req.backend)
     .bind(&manifest_url)
     .bind(&manifest_sha256)
     .bind(&req.env)
@@ -482,6 +483,7 @@ fn vendor_to_response(v: &Vendor, profile: Option<VendorProfile>) -> VendorRespo
         owner: v.owner.clone(),
         mode: v.mode,
         shop_type: v.shop_type,
+        backend: v.backend,
         profile,
         profile_seq: v.profile_seq,
         status: v.status,
