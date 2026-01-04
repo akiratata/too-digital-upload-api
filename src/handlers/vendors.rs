@@ -111,60 +111,61 @@ pub async fn get_vendor(
     }
 }
 
-/// GET /api/vendors/by-peer/:peer_id - peer_idでVendor検索
+/// GET /api/vendors/by-peer/:peer_id - peer_idでVendor検索（複数返却）
 pub async fn get_vendor_by_peer(
     State(state): State<Arc<AppState>>,
     Path(peer_id): Path<String>,
-) -> Result<Json<VendorDetailResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let vendor: Option<Vendor> = sqlx::query_as(
-        "SELECT * FROM vendors WHERE peer_id = ? AND is_alive = 1"
+) -> Result<Json<VendorListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let vendors: Vec<Vendor> = sqlx::query_as(
+        "SELECT * FROM vendors WHERE peer_id = ? AND is_alive = 1 ORDER BY created_at_ms DESC"
     )
     .bind(&peer_id)
-    .fetch_optional(&state.db)
+    .fetch_all(&state.db)
     .await
     .map_err(|e| {
         error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))
     })?;
 
-    match vendor {
-        Some(v) => {
-            let profile = load_vendor_profile(&state.base_data_dir, &v.stable_id).await.ok();
-            Ok(Json(VendorDetailResponse {
-                success: true,
-                vendor: Some(vendor_to_response(&v, profile)),
-            }))
-        }
-        None => Err(error_response(StatusCode::NOT_FOUND, "Vendor not found for this peer_id".to_string())),
+    let mut responses = Vec::new();
+    for v in &vendors {
+        let profile = load_vendor_profile(&state.base_data_dir, &v.stable_id).await.ok();
+        responses.push(vendor_to_response(v, profile));
     }
+
+    let total = responses.len();
+    Ok(Json(VendorListResponse {
+        success: true,
+        vendors: responses,
+        total,
+    }))
 }
 
 /// POST /api/vendors - Vendor作成
+/// 同一peer_idで複数ベンダーを作成可能
 pub async fn create_vendor(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateVendorRequest>,
 ) -> Result<Json<VendorCreateResponse>, (StatusCode, Json<ErrorResponse>)> {
     let now_ms = chrono::Utc::now().timestamp_millis();
 
-    // 既存チェック（peer_idで、is_alive=1のみ）
-    let existing: Option<Vendor> = sqlx::query_as(
-        "SELECT * FROM vendors WHERE peer_id = ? AND is_alive = 1"
-    )
-    .bind(&req.peer_id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))
-    })?;
+    // stable_id が指定されている場合は重複チェック
+    if let Some(ref specified_id) = req.stable_id {
+        let existing: Option<Vendor> = sqlx::query_as(
+            "SELECT * FROM vendors WHERE stable_id = ?"
+        )
+        .bind(specified_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| {
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))
+        })?;
 
-    if let Some(v) = existing {
-        // 既存のアクティブなVendorを返す
-        return Ok(Json(VendorCreateResponse {
-            success: true,
-            stable_id: v.stable_id,
-            peer_id: req.peer_id,
-            manifest_url: v.manifest_url.unwrap_or_default(),
-            manifest_sha256: v.manifest_sha256.unwrap_or_default(),
-        }));
+        if existing.is_some() {
+            return Err(error_response(
+                StatusCode::CONFLICT,
+                format!("Vendor with stable_id '{}' already exists", specified_id)
+            ));
+        }
     }
 
     // stable_id を生成（VENDOR_XXXXXXXX形式）
