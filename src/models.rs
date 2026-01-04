@@ -66,6 +66,7 @@ pub struct UpdateVendorRequest {
     pub owner: Option<String>,
     pub profile: Option<VendorProfile>,
     pub status: Option<i32>,
+    pub backend: Option<i32>,
 }
 
 /// Vendor レスポンス（API返却用）

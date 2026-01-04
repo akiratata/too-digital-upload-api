@@ -284,6 +284,7 @@ pub async fn update_vendor(
             manifest_sha256 = ?,
             profile_seq = profile_seq + 1,
             status = COALESCE(?, status),
+            backend = COALESCE(?, backend),
             updated_at_ms = ?
         WHERE stable_id = ?
     "#)
@@ -292,6 +293,7 @@ pub async fn update_vendor(
     .bind(&manifest_url)
     .bind(&manifest_sha256)
     .bind(req.status)
+    .bind(req.backend)
     .bind(now_ms)
     .bind(&stable_id)
     .execute(&state.db)
