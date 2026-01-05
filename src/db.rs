@@ -50,6 +50,7 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
             owner TEXT,
             mode INTEGER NOT NULL DEFAULT 0,
             shop_type INTEGER NOT NULL DEFAULT 0,
+            backend TEXT NOT NULL DEFAULT 'vps',
             manifest_url TEXT,
             manifest_sha256 TEXT,
             profile_seq INTEGER NOT NULL DEFAULT 0,
@@ -63,6 +64,10 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     "#)
     .execute(pool)
     .await?;
+
+    // backend カラム追加（既存DBのマイグレーション用）
+    sqlx::query("ALTER TABLE vendors ADD COLUMN backend TEXT NOT NULL DEFAULT 'vps'")
+        .execute(pool).await.ok();  // 既に存在する場合は無視
 
     // vendors の peer_id インデックス
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vendors_peer_id ON vendors(peer_id)")
