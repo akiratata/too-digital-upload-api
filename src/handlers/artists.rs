@@ -170,7 +170,6 @@ pub async fn create_artist(
 
     // ディレクトリ作成
     let artist_dir = PathBuf::from(&state.base_data_dir)
-        .parent().unwrap_or(&PathBuf::from("/data"))
         .join("account")
         .join("artists")
         .join(&stable_id);
@@ -368,7 +367,6 @@ pub async fn upload_artist_icon(
 
             // 保存先ディレクトリ
             let dir = PathBuf::from(&state.base_data_dir)
-                .parent().unwrap_or(&PathBuf::from("/data"))
                 .join("account")
                 .join("artists")
                 .join(&stable_id);
@@ -403,13 +401,13 @@ pub async fn upload_artist_icon(
             // icon_url を profile.json に更新（サムネイルURLも含む）
             let icon_url = format!(
                 "{}/account/artists/{}/{}",
-                state.vps_base_url.replace("/nft", ""),
+                state.vps_base_url,
                 stable_id,
                 icon_filename
             );
             let icon_thumb_url = format!(
                 "{}/account/artists/{}/{}",
-                state.vps_base_url.replace("/nft", ""),
+                state.vps_base_url,
                 stable_id,
                 thumb_filename
             );
@@ -546,7 +544,6 @@ async fn save_artist_profile(
     profile: &ArtistProfile,
 ) -> anyhow::Result<(String, String)> {
     let dir = PathBuf::from(base_dir)
-        .parent().unwrap_or(&PathBuf::from("/data"))
         .join("account")
         .join("artists")
         .join(stable_id);
@@ -564,7 +561,7 @@ async fn save_artist_profile(
 
     let url = format!(
         "{}/account/artists/{}/profile.json",
-        base_url.replace("/nft", ""),
+        base_url,
         stable_id
     );
 
@@ -575,7 +572,6 @@ async fn save_artist_profile(
 /// ArtistProfile をファイルから読み込む
 async fn load_artist_profile(base_dir: &str, stable_id: &str) -> anyhow::Result<ArtistProfile> {
     let path = PathBuf::from(base_dir)
-        .parent().unwrap_or(&PathBuf::from("/data"))
         .join("account")
         .join("artists")
         .join(stable_id)
@@ -594,7 +590,6 @@ async fn save_discography_json(
     discography: &DiscographyJson,
 ) -> anyhow::Result<(String, String)> {
     let dir = PathBuf::from(base_dir)
-        .parent().unwrap_or(&PathBuf::from("/data"))
         .join("account")
         .join("artists")
         .join(stable_id);
@@ -612,7 +607,7 @@ async fn save_discography_json(
 
     let url = format!(
         "{}/account/artists/{}/discography.json",
-        base_url.replace("/nft", ""),
+        base_url,
         stable_id
     );
 
@@ -623,7 +618,6 @@ async fn save_discography_json(
 /// DiscographyJson をファイルから読み込む
 async fn load_discography_json(base_dir: &str, stable_id: &str) -> anyhow::Result<DiscographyJson> {
     let path = PathBuf::from(base_dir)
-        .parent().unwrap_or(&PathBuf::from("/data"))
         .join("account")
         .join("artists")
         .join(stable_id)

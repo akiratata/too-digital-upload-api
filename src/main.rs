@@ -43,8 +43,8 @@ struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            base_data_dir: PathBuf::from("/data/nft"),
-            vps_base_url: "http://153.121.61.17/nft".to_string(),
+            base_data_dir: PathBuf::from("/data"),
+            vps_base_url: "http://153.121.61.17/data".to_string(),
         }
     }
 }
@@ -203,7 +203,7 @@ async fn upload_file(
         error_response(StatusCode::BAD_REQUEST, "category is required".to_string())
     })?;
 
-    // file_type のバリデーション
+    // file_type のバリデーション (nft/promo または nft/albums)
     if file_type != "promo" && file_type != "albums" {
         return Err(error_response(
             StatusCode::BAD_REQUEST,
@@ -241,11 +241,17 @@ async fn upload_file(
     };
 
     // 保存先ディレクトリの構築
+    // albums -> nft/albums, promo -> promo
     let base_dir = PathBuf::from(&state.base_data_dir);
-    let target_dir = if category == "tracks" {
-        base_dir.join(&file_type).join(&album_id).join("tracks")
+    let type_dir = if file_type == "albums" {
+        base_dir.join("nft").join("albums")
     } else {
-        base_dir.join(&file_type).join(&album_id)
+        base_dir.join(&file_type)
+    };
+    let target_dir = if category == "tracks" {
+        type_dir.join(&album_id).join("tracks")
+    } else {
+        type_dir.join(&album_id)
     };
 
     // ディレクトリ作成
@@ -290,16 +296,17 @@ async fn upload_file(
         }
     }
 
-    // URL 生成
+    // URL 生成 (albums -> nft/albums, promo -> promo)
+    let url_type_path = if file_type == "albums" { "nft/albums" } else { &file_type };
     let url = if category == "tracks" {
         format!(
             "{}/{}/{}/tracks/{}",
-            state.vps_base_url, file_type, album_id, filename
+            state.vps_base_url, url_type_path, album_id, filename
         )
     } else {
         format!(
             "{}/{}/{}/{}",
-            state.vps_base_url, file_type, album_id, filename
+            state.vps_base_url, url_type_path, album_id, filename
         )
     };
 
@@ -316,9 +323,14 @@ async fn delete_file(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<DeleteRequest>,
 ) -> Result<Json<DeleteResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let target_dir = PathBuf::from(&state.base_data_dir)
-        .join(&payload.file_type)
-        .join(&payload.album_id);
+    // albums -> nft/albums, promo -> promo
+    let base_dir = PathBuf::from(&state.base_data_dir);
+    let type_dir = if payload.file_type == "albums" {
+        base_dir.join("nft").join("albums")
+    } else {
+        base_dir.join(&payload.file_type)
+    };
+    let target_dir = type_dir.join(&payload.album_id);
 
     if !target_dir.exists() {
         return Err(error_response(
@@ -371,9 +383,9 @@ async fn main() {
         .init();
 
     // 設定
-    let base_data_dir = "/data/nft".to_string();
-    let vps_base_url = "http://153.121.61.17/nft".to_string();
-    let db_path = "/data/nft/nft_server.db";
+    let base_data_dir = "/data".to_string();
+    let vps_base_url = "http://153.121.61.17/data".to_string();
+    let db_path = "/data/nft_server.db";
 
     // DB初期化
     info!("Initializing database...");

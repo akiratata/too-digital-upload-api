@@ -180,6 +180,7 @@ pub async fn create_vendor(
 
     // ディレクトリ作成
     let vendor_dir = PathBuf::from(&state.base_data_dir)
+        .join("account")
         .join("vendors")
         .join(&stable_id);
     fs::create_dir_all(&vendor_dir).await.map_err(|e| {
@@ -378,6 +379,7 @@ pub async fn upload_vendor_icon(
 
             // 保存先ディレクトリ
             let dir = PathBuf::from(&state.base_data_dir)
+                .join("account")
                 .join("vendors")
                 .join(&stable_id);
             fs::create_dir_all(&dir).await.map_err(|e| {
@@ -394,7 +396,7 @@ pub async fn upload_vendor_icon(
                 error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write file: {}", e))
             })?;
 
-            let icon_url = format!("{}/vendors/{}/{}", state.vps_base_url, stable_id, icon_filename);
+            let icon_url = format!("{}/account/vendors/{}/{}", state.vps_base_url, stable_id, icon_filename);
             info!("Icon uploaded: {}", icon_url);
 
             // profile.json の icon_url を更新
@@ -441,6 +443,7 @@ async fn save_vendor_profile(
     profile: &VendorProfile,
 ) -> anyhow::Result<(String, String)> {
     let dir = PathBuf::from(base_dir)
+        .join("account")
         .join("vendors")
         .join(stable_id);
     fs::create_dir_all(&dir).await?;
@@ -457,7 +460,7 @@ async fn save_vendor_profile(
     let mut file = fs::File::create(&path).await?;
     file.write_all(json.as_bytes()).await?;
 
-    let url = format!("{}/vendors/{}/profile.json", base_url, stable_id);
+    let url = format!("{}/account/vendors/{}/profile.json", base_url, stable_id);
 
     info!("Profile saved: {} (sha256: {})", url, &sha256[..16]);
 
@@ -467,6 +470,7 @@ async fn save_vendor_profile(
 /// VendorProfile をファイルから読み込む
 async fn load_vendor_profile(base_dir: &str, stable_id: &str) -> anyhow::Result<VendorProfile> {
     let path = PathBuf::from(base_dir)
+        .join("account")
         .join("vendors")
         .join(stable_id)
         .join("profile.json");
