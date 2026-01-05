@@ -44,7 +44,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             base_data_dir: PathBuf::from("/data"),
-            vps_base_url: "http://153.121.61.17/data".to_string(),
+            vps_base_url: "http://153.121.61.17".to_string(),
         }
     }
 }
@@ -384,7 +384,7 @@ async fn main() {
 
     // 設定
     let base_data_dir = "/data".to_string();
-    let vps_base_url = "http://153.121.61.17/data".to_string();
+    let vps_base_url = "http://153.121.61.17".to_string();
     let db_path = "/data/nft_server.db";
 
     // DB初期化
