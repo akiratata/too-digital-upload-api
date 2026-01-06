@@ -141,11 +141,25 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
             created_at_ms INTEGER,
             updated_at_ms INTEGER,
             is_alive INTEGER NOT NULL DEFAULT 1,
+            manifest_id TEXT,
+            title TEXT,
+            artist TEXT,
+            cover_url TEXT,
             FOREIGN KEY (vendor_stable_id) REFERENCES vendors(stable_id)
         )
     "#)
     .execute(pool)
     .await?;
+
+    // listings カラム追加（既存DBのマイグレーション用）
+    sqlx::query("ALTER TABLE listings ADD COLUMN manifest_id TEXT")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE listings ADD COLUMN title TEXT")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE listings ADD COLUMN artist TEXT")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE listings ADD COLUMN cover_url TEXT")
+        .execute(pool).await.ok();
 
     // receipts テーブル
     sqlx::query(r#"
