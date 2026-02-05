@@ -436,6 +436,11 @@ async fn main() {
         .route("/api/drops/:drop_id", get(handlers::drops::get_drop))
         .route("/api/drops/:drop_id/claim", post(handlers::drops::claim_drop))
         .route("/api/drops/:drop_id/download", get(handlers::drops::download_drop))
+        // Camera (モバイルカメラ → デスクトップアプリ転送)
+        .route("/camera", get(handlers::camera::camera_page))
+        .route("/api/camera/upload", post(handlers::camera::upload_image))
+        .route("/api/camera/latest", get(handlers::camera::get_latest))
+        .route("/api/camera/latest", delete(handlers::camera::delete_latest))
         // ミドルウェア
         .layer(DefaultBodyLimit::max(800 * 1024 * 1024)) // 800MB まで許可
         .layer(CorsLayer::permissive())
