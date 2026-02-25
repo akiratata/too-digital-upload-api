@@ -572,3 +572,60 @@ pub struct BatchDropResponse {
     pub success: bool,
     pub results: std::collections::HashMap<String, bool>,
 }
+
+// ========================================
+// Device（デバイス制限管理）
+// ========================================
+
+/// Device (DB row)
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Device {
+    pub device_id: String,
+    pub peer_id: String,
+    pub device_type: String,   // "pc" | "mobile"
+    pub device_name: String,
+    pub platform: String,      // "macos", "windows", "ios", "android", "linux"
+    pub registered_at_ms: i64,
+    pub last_seen_at_ms: i64,
+    pub is_alive: i32,
+}
+
+/// デバイス登録リクエスト
+#[derive(Debug, Deserialize)]
+pub struct RegisterDeviceRequest {
+    pub peer_id: String,
+    pub device_id: String,
+    pub device_type: String,   // "pc" | "mobile"
+    pub device_name: String,
+    pub platform: String,
+}
+
+/// デバイスレスポンス
+#[derive(Debug, Serialize)]
+pub struct DeviceResponse {
+    pub device_id: String,
+    pub peer_id: String,
+    pub device_type: String,
+    pub device_name: String,
+    pub platform: String,
+    pub registered_at_ms: i64,
+    pub last_seen_at_ms: i64,
+}
+
+/// デバイス一覧レスポンス
+#[derive(Debug, Serialize)]
+pub struct DeviceListResponse {
+    pub success: bool,
+    pub devices: Vec<DeviceResponse>,
+    pub pc_slot_used: bool,
+    pub mobile_slot_used: bool,
+}
+
+/// デバイス登録レスポンス
+#[derive(Debug, Serialize)]
+pub struct RegisterDeviceResponse {
+    pub success: bool,
+    pub device: DeviceResponse,
+    pub pc_slot_used: bool,
+    pub mobile_slot_used: bool,
+}

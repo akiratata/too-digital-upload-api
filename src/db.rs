@@ -242,6 +242,26 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     .execute(pool)
     .await?;
 
+    // devices テーブル（デバイス制限: 1 peer_id → PC1台 + Mobile1台）
+    sqlx::query(r#"
+        CREATE TABLE IF NOT EXISTS devices (
+            device_id TEXT PRIMARY KEY,
+            peer_id TEXT NOT NULL,
+            device_type TEXT NOT NULL CHECK(device_type IN ('pc', 'mobile')),
+            device_name TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            registered_at_ms INTEGER NOT NULL,
+            last_seen_at_ms INTEGER NOT NULL,
+            is_alive INTEGER NOT NULL DEFAULT 1
+        )
+    "#)
+    .execute(pool)
+    .await?;
+
+    // devices インデックス
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_devices_peer_id ON devices(peer_id)")
+        .execute(pool).await?;
+
     // インデックス作成
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vendors_is_alive ON vendors(is_alive)")
         .execute(pool).await?;

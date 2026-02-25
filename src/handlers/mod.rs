@@ -5,3 +5,4 @@ pub mod listings;
 pub mod artists;
 pub mod drops;
 pub mod camera;
+pub mod devices;
