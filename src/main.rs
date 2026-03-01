@@ -6,10 +6,12 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
 
@@ -28,6 +30,10 @@ pub struct AppState {
     pub base_data_dir: String,
     pub vps_base_url: String,
     pub db: DbPool,
+    /// Challenge store: challenge_hex → (challenge_hex, expires_at_ms)
+    pub challenges: RwLock<HashMap<String, (String, i64)>>,
+    /// Token store: token → (peer_id, expires_at_ms)
+    pub tokens: RwLock<HashMap<String, (String, i64)>>,
 }
 
 // ========================================
@@ -396,6 +402,8 @@ async fn main() {
         base_data_dir,
         vps_base_url,
         db,
+        challenges: RwLock::new(HashMap::new()),
+        tokens: RwLock::new(HashMap::new()),
     });
 
     // ルーター構築
@@ -436,7 +444,10 @@ async fn main() {
         .route("/api/drops/:drop_id", get(handlers::drops::get_drop))
         .route("/api/drops/:drop_id/claim", post(handlers::drops::claim_drop))
         .route("/api/drops/:drop_id/download", get(handlers::drops::download_drop))
-        // Devices API (デバイス制限)
+        // Devices Auth API (Challenge-Response認証)
+        .route("/api/devices/auth/challenge", get(handlers::devices::get_challenge))
+        .route("/api/devices/auth/verify", post(handlers::devices::verify_challenge))
+        // Devices API (デバイス制限 — 要認証)
         .route("/api/devices/register", post(handlers::devices::register_device))
         .route("/api/devices/:peer_id", get(handlers::devices::list_devices))
         .route("/api/devices/:peer_id/:device_type", delete(handlers::devices::unregister_device))
@@ -456,7 +467,7 @@ async fn main() {
     info!("Database: {}", db_path);
 
     // 期限切れDrops処理のバックグラウンドジョブ（1時間ごと）
-    let state_clone = state;
+    let state_for_drops = state.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
         loop {
@@ -464,15 +475,46 @@ async fn main() {
             info!("[Job] Running expired drops check...");
 
             // 期限切れDropsをENDED状態に更新
-            if let Err(e) = handlers::drops::expire_drops(&state_clone).await {
+            if let Err(e) = handlers::drops::expire_drops(&state_for_drops).await {
                 warn!("[Job] expire_drops error: {:?}", e);
             }
 
             // 7日以上前にENDEDになったDropsをpurge（ファイル削除）
             // grace_seconds = 7 * 24 * 3600 = 604800 (7日)
-            if let Err(e) = handlers::drops::purge_ended_drops(&state_clone, 604800).await {
+            if let Err(e) = handlers::drops::purge_ended_drops(&state_for_drops, 604800).await {
                 warn!("[Job] purge_ended_drops error: {:?}", e);
             }
+        }
+    });
+
+    // 期限切れデバイス処理のバックグラウンドジョブ（1時間ごと、TTL=7日）
+    let state_for_devices = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            info!("[Job] Running stale devices check...");
+
+            // 7日間heartbeatがないデバイスを無効化
+            let ttl_ms: i64 = 7 * 24 * 3600 * 1000;
+            match handlers::devices::expire_stale_devices(&state_for_devices, ttl_ms).await {
+                Ok(count) => {
+                    if count > 0 {
+                        info!("[Job] Expired {} stale device(s)", count);
+                    }
+                }
+                Err(e) => warn!("[Job] expire_stale_devices error: {:?}", e),
+            }
+        }
+    });
+
+    // 期限切れ認証情報クリーンアップ（10分ごと）
+    let state_for_auth = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(600));
+        loop {
+            interval.tick().await;
+            handlers::devices::cleanup_expired_auth(&state_for_auth).await;
         }
     });
 

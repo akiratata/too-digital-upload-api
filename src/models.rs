@@ -629,3 +629,32 @@ pub struct RegisterDeviceResponse {
     pub pc_slot_used: bool,
     pub mobile_slot_used: bool,
 }
+
+// ========================================
+// Device Auth（Challenge-Response認証）
+// ========================================
+
+/// Challenge レスポンス
+#[derive(Debug, Serialize)]
+pub struct DeviceChallengeResponse {
+    pub challenge: String,
+    pub expires_at_ms: i64,
+}
+
+/// 署名検証リクエスト
+#[derive(Debug, Deserialize)]
+pub struct DeviceVerifyRequest {
+    pub peer_id: String,
+    pub challenge: String,
+    pub pubkey: String,  // base64
+    pub sig: String,     // base64
+}
+
+/// 検証成功レスポンス
+#[derive(Debug, Serialize)]
+pub struct DeviceVerifyResponse {
+    pub ok: bool,
+    pub token: String,
+    pub peer_id: String,
+    pub expires_at_ms: i64,
+}

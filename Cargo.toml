@@ -44,5 +44,10 @@ base32 = "0.4"
 # ランダム生成
 rand = "0.8"
 
+# Ed25519 認証（デバイスAPI Challenge-Response）
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+base64 = "0.22"
+bs58 = "0.5"
+
 # 画像処理（サムネイル生成）
 image = "0.25"
