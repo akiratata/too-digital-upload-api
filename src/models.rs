@@ -110,6 +110,8 @@ pub struct Listing {
     pub created_at_ms: Option<i64>,
     pub updated_at_ms: Option<i64>,
     pub is_alive: i32,
+    // Sui オンチェーン参照
+    pub inventory_id: Option<String>,
     // メタデータフィールド
     pub manifest_id: Option<String>,
     pub title: Option<String>,
@@ -132,6 +134,8 @@ pub struct CreateListingRequest {
     pub currency: String,
     #[serde(default = "default_supply")]
     pub supply_total: i64,
+    // Sui オンチェーン参照
+    pub inventory_id: Option<String>,
     // メタデータフィールド
     pub manifest_id: Option<String>,
     pub title: Option<String>,
@@ -168,6 +172,8 @@ pub struct ListingResponse {
     pub created_at_ms: Option<i64>,
     pub updated_at_ms: Option<i64>,
     pub is_alive: bool,
+    // Sui オンチェーン参照
+    pub inventory_id: Option<String>,
     // メタデータフィールド
     pub manifest_id: Option<String>,
     pub title: Option<String>,

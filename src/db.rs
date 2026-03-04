@@ -3,6 +3,10 @@
 
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use anyhow::Result;
+use sha2::{Sha256, Digest};
+use std::path::PathBuf;
+use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use tracing::info;
 
 /// データベース接続プール
@@ -152,6 +156,8 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     .await?;
 
     // listings カラム追加（既存DBのマイグレーション用）
+    sqlx::query("ALTER TABLE listings ADD COLUMN inventory_id TEXT")
+        .execute(pool).await.ok();
     sqlx::query("ALTER TABLE listings ADD COLUMN manifest_id TEXT")
         .execute(pool).await.ok();
     sqlx::query("ALTER TABLE listings ADD COLUMN title TEXT")
@@ -290,5 +296,77 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_drop_claims_user ON drop_claims(user_id)")
         .execute(pool).await?;
 
+    Ok(())
+}
+
+/// 公式ショップの stable_id
+const OFFICIAL_VENDOR_STABLE_ID: &str = "VENDOR_9189MZWY";
+
+/// 公式ショップをシード（存在しない場合のみ挿入）
+/// VPS リセット後も公式ショップが必ず存在することを保証する
+pub async fn seed_official_vendors(pool: &DbPool, base_dir: &str, base_url: &str) -> Result<()> {
+    let existing: Option<(String,)> = sqlx::query_as(
+        "SELECT stable_id FROM vendors WHERE stable_id = ?"
+    )
+    .bind(OFFICIAL_VENDOR_STABLE_ID)
+    .fetch_optional(pool)
+    .await?;
+
+    if existing.is_some() {
+        info!("Official vendor already exists: {}", OFFICIAL_VENDOR_STABLE_ID);
+        return Ok(());
+    }
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+
+    // profile.json を作成
+    let profile_json = serde_json::json!({
+        "name": "toodigital marketplace",
+        "description": "誰でも自由に音楽NFTを出品・購入できるオープンマーケットプレイスです。アーティストは承認なしで作品をデプロイできます。",
+        "icon_url": format!("{}/app/official-marketplace/pfp.jpg", base_url),
+        "address": null,
+        "fee_rate": null,
+        "extra": {}
+    });
+    let profile_str = serde_json::to_string_pretty(&profile_json)?;
+
+    // SHA256
+    let mut hasher = Sha256::new();
+    hasher.update(profile_str.as_bytes());
+    let sha256 = hex::encode(hasher.finalize());
+
+    // ディレクトリ作成 & profile.json 保存
+    let vendor_dir = PathBuf::from(base_dir)
+        .join("account")
+        .join("vendors")
+        .join(OFFICIAL_VENDOR_STABLE_ID);
+    fs::create_dir_all(&vendor_dir).await?;
+
+    let profile_path = vendor_dir.join("profile.json");
+    let mut file = fs::File::create(&profile_path).await?;
+    file.write_all(profile_str.as_bytes()).await?;
+
+    let manifest_url = format!(
+        "{}/account/vendors/{}/profile.json",
+        base_url, OFFICIAL_VENDOR_STABLE_ID
+    );
+
+    // DB に挿入
+    sqlx::query(r#"
+        INSERT INTO vendors (
+            stable_id, mode, shop_type, backend,
+            manifest_url, manifest_sha256,
+            status, env, created_at_ms, updated_at_ms, is_alive
+        ) VALUES (?, 0, 0, 0, ?, ?, 0, 'devnet', ?, ?, 1)
+    "#)
+    .bind(OFFICIAL_VENDOR_STABLE_ID)
+    .bind(&manifest_url)
+    .bind(&sha256)
+    .bind(now_ms)
+    .bind(now_ms)
+    .execute(pool)
+    .await?;
+
+    info!("Official vendor seeded: {} (profile: {})", OFFICIAL_VENDOR_STABLE_ID, manifest_url);
     Ok(())
 }

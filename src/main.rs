@@ -397,6 +397,11 @@ async fn main() {
     info!("Initializing database...");
     let db = db::init_db(db_path).await.expect("Failed to initialize database");
 
+    // 公式ショップをシード（VPSリセット後も必ず存在を保証）
+    db::seed_official_vendors(&db, &base_data_dir, &vps_base_url)
+        .await
+        .expect("Failed to seed official vendors");
+
     // アプリケーション状態
     let state = Arc::new(AppState {
         base_data_dir,
