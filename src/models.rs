@@ -664,3 +664,61 @@ pub struct DeviceVerifyResponse {
     pub peer_id: String,
     pub expires_at_ms: i64,
 }
+
+// ========================================
+// Peer Profile（P2P名/PFP 一元管理）
+// ========================================
+
+/// Peer Profile (DB row)
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct PeerProfile {
+    pub peer_id: String,
+    pub display_name: Option<String>,
+    pub pfp_url: Option<String>,
+    pub pfp_sha256: Option<String>,
+    pub updated_at_ms: i64,
+}
+
+/// Peer Profile 登録/更新リクエスト
+#[derive(Debug, Deserialize)]
+pub struct UpsertPeerProfileRequest {
+    pub peer_id: String,
+    pub display_name: Option<String>,
+    pub pfp_url: Option<String>,
+    pub pfp_sha256: Option<String>,
+}
+
+/// Follower/Subscriber 登録リクエスト（peer_id のみ）
+#[derive(Debug, Deserialize)]
+pub struct AddFollowerRequest {
+    pub peer_id: String,
+}
+
+/// Follower/Subscriber レスポンス（peer_id 非公開、JOIN 結果）
+#[derive(Debug, Serialize)]
+pub struct FollowerResponse {
+    pub display_name: Option<String>,
+    pub pfp_url: Option<String>,
+    pub followed_at_ms: i64,
+}
+
+/// Follower 一覧レスポンス
+#[derive(Debug, Serialize)]
+pub struct FollowerListResponse {
+    pub success: bool,
+    pub followers: Vec<FollowerResponse>,
+}
+
+/// Subscriber 一覧レスポンス
+#[derive(Debug, Serialize)]
+pub struct SubscriberListResponse {
+    pub success: bool,
+    pub subscribers: Vec<FollowerResponse>,
+}
+
+/// カウントレスポンス
+#[derive(Debug, Serialize)]
+pub struct CountResponse {
+    pub success: bool,
+    pub count: i64,
+}

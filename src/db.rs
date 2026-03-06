@@ -264,6 +264,47 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     .execute(pool)
     .await?;
 
+    // peer_profiles テーブル（P2P名/PFPを一元管理、名前変更時は1行UPDATEのみ）
+    sqlx::query(r#"
+        CREATE TABLE IF NOT EXISTS peer_profiles (
+            peer_id TEXT PRIMARY KEY,
+            display_name TEXT,
+            pfp_url TEXT,
+            pfp_sha256 TEXT,
+            updated_at_ms INTEGER NOT NULL
+        )
+    "#)
+    .execute(pool)
+    .await?;
+
+    // artist_followers テーブル（peer_id のみ保持、名前は peer_profiles から JOIN）
+    sqlx::query(r#"
+        CREATE TABLE IF NOT EXISTS artist_followers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            artist_stable_id TEXT NOT NULL,
+            peer_id TEXT NOT NULL,
+            followed_at_ms INTEGER NOT NULL,
+            FOREIGN KEY (artist_stable_id) REFERENCES artists(stable_id),
+            UNIQUE(artist_stable_id, peer_id)
+        )
+    "#)
+    .execute(pool)
+    .await?;
+
+    // vendor_subscribers テーブル（peer_id のみ保持、名前は peer_profiles から JOIN）
+    sqlx::query(r#"
+        CREATE TABLE IF NOT EXISTS vendor_subscribers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vendor_stable_id TEXT NOT NULL,
+            peer_id TEXT NOT NULL,
+            subscribed_at_ms INTEGER NOT NULL,
+            FOREIGN KEY (vendor_stable_id) REFERENCES vendors(stable_id),
+            UNIQUE(vendor_stable_id, peer_id)
+        )
+    "#)
+    .execute(pool)
+    .await?;
+
     // devices インデックス
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_devices_peer_id ON devices(peer_id)")
         .execute(pool).await?;
@@ -282,6 +323,12 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_receipts_buyer ON receipts(buyer)")
         .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_receipts_listing ON receipts(listing_id)")
+        .execute(pool).await?;
+
+    // artist_followers / vendor_subscribers インデックス
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_artist_followers_artist ON artist_followers(artist_stable_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_vendor_subscribers_vendor ON vendor_subscribers(vendor_stable_id)")
         .execute(pool).await?;
 
     // drops インデックス

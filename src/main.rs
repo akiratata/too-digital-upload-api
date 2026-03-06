@@ -6,6 +6,7 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
+use crate::models::UpsertPeerProfileRequest;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -361,6 +362,43 @@ async fn delete_file(
 }
 
 // ========================================
+// Peer Profile Handler
+// ========================================
+
+/// PUT /api/peer-profile - P2P名/PFP 更新（名前変更時に1回だけ呼ぶ）
+async fn upsert_peer_profile(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<UpsertPeerProfileRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+
+    sqlx::query(r#"
+        INSERT INTO peer_profiles (peer_id, display_name, pfp_url, pfp_sha256, updated_at_ms)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(peer_id) DO UPDATE SET
+            display_name = COALESCE(excluded.display_name, peer_profiles.display_name),
+            pfp_url = COALESCE(excluded.pfp_url, peer_profiles.pfp_url),
+            pfp_sha256 = COALESCE(excluded.pfp_sha256, peer_profiles.pfp_sha256),
+            updated_at_ms = excluded.updated_at_ms
+    "#)
+    .bind(&req.peer_id)
+    .bind(&req.display_name)
+    .bind(&req.pfp_url)
+    .bind(&req.pfp_sha256)
+    .bind(now_ms)
+    .execute(&state.db)
+    .await
+    .map_err(|e| {
+        warn!("peer_profile upsert error: {}", e);
+        error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))
+    })?;
+
+    info!("Peer profile upserted: peer_id={}", &req.peer_id[..20.min(req.peer_id.len())]);
+
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+// ========================================
 // エラーレスポンスヘルパー
 // ========================================
 
@@ -441,6 +479,18 @@ async fn main() {
         .route("/api/account/artists/:stable_id/discography", get(handlers::artists::get_discography))
         .route("/api/account/artists/:stable_id/discography", post(handlers::artists::add_discography))
         .route("/api/account/artists/by-peer/:peer_id", get(handlers::artists::get_artist_by_peer))
+        // Artist Followers API
+        .route("/api/account/artists/:stable_id/followers", post(handlers::artists::add_follower))
+        .route("/api/account/artists/:stable_id/followers", get(handlers::artists::list_followers))
+        .route("/api/account/artists/:stable_id/followers/:peer_id", delete(handlers::artists::remove_follower))
+        .route("/api/account/artists/:stable_id/follower-count", get(handlers::artists::get_follower_count))
+        // Vendor Subscribers API
+        .route("/api/vendors/:stable_id/subscribers", post(handlers::vendors::add_subscriber))
+        .route("/api/vendors/:stable_id/subscribers", get(handlers::vendors::list_subscribers))
+        .route("/api/vendors/:stable_id/subscribers/:peer_id", delete(handlers::vendors::remove_subscriber))
+        .route("/api/vendors/:stable_id/subscriber-count", get(handlers::vendors::get_subscriber_count))
+        // Peer Profile API
+        .route("/api/peer-profile", put(upsert_peer_profile))
         // Drops API
         .route("/api/vendors/:vendor_stable_id/drops", get(handlers::drops::list_drops))
         .route("/api/vendors/:vendor_stable_id/drops/batch_end", post(handlers::drops::batch_end_drops))

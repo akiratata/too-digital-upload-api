@@ -19,6 +19,7 @@ use crate::models::{
     CreateArtistRequest, UpdateArtistRequest, Artist, ArtistProfile, ArtistP2P,
     ArtistResponse, ArtistCreateResponse, AddDiscographyRequest, DiscographyEntry,
     DiscographyJson, DiscographyAlbum, TrackPreview,
+    AddFollowerRequest, FollowerResponse, FollowerListResponse, CountResponse,
 };
 use crate::AppState;
 
@@ -515,6 +516,107 @@ pub async fn get_discography(
         success: true,
         discography,
     }))
+}
+
+// ========================================
+// Follower Handlers
+// ========================================
+
+/// POST /api/account/artists/:stable_id/followers - フォロワー登録
+pub async fn add_follower(
+    State(state): State<Arc<AppState>>,
+    Path(stable_id): Path<String>,
+    Json(req): Json<AddFollowerRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+
+    // peer_profiles を UPSERT（初回は display_name=NULL のまま登録）
+    sqlx::query(r#"
+        INSERT INTO peer_profiles (peer_id, updated_at_ms)
+        VALUES (?, ?)
+        ON CONFLICT(peer_id) DO NOTHING
+    "#)
+    .bind(&req.peer_id)
+    .bind(now_ms)
+    .execute(&state.db)
+    .await
+    .map_err(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e)))?;
+
+    // artist_followers に UPSERT
+    sqlx::query(r#"
+        INSERT INTO artist_followers (artist_stable_id, peer_id, followed_at_ms)
+        VALUES (?, ?, ?)
+        ON CONFLICT(artist_stable_id, peer_id) DO NOTHING
+    "#)
+    .bind(&stable_id)
+    .bind(&req.peer_id)
+    .bind(now_ms)
+    .execute(&state.db)
+    .await
+    .map_err(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e)))?;
+
+    info!("Follower added: artist={}, peer={}", stable_id, &req.peer_id[..20.min(req.peer_id.len())]);
+
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+/// DELETE /api/account/artists/:stable_id/followers/:peer_id - フォロワー削除
+pub async fn remove_follower(
+    State(state): State<Arc<AppState>>,
+    Path((stable_id, peer_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    sqlx::query("DELETE FROM artist_followers WHERE artist_stable_id = ? AND peer_id = ?")
+        .bind(&stable_id)
+        .bind(&peer_id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e)))?;
+
+    info!("Follower removed: artist={}, peer={}", stable_id, &peer_id[..20.min(peer_id.len())]);
+
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+/// GET /api/account/artists/:stable_id/followers - フォロワー一覧（peer_id 非公開）
+pub async fn list_followers(
+    State(state): State<Arc<AppState>>,
+    Path(stable_id): Path<String>,
+) -> Result<Json<FollowerListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let rows: Vec<(Option<String>, Option<String>, i64)> = sqlx::query_as(
+        r#"
+        SELECT pp.display_name, pp.pfp_url, af.followed_at_ms
+        FROM artist_followers af
+        LEFT JOIN peer_profiles pp ON af.peer_id = pp.peer_id
+        WHERE af.artist_stable_id = ?
+        ORDER BY af.followed_at_ms DESC
+        "#
+    )
+    .bind(&stable_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e)))?;
+
+    let followers: Vec<FollowerResponse> = rows.into_iter().map(|(name, pfp, ts)| {
+        FollowerResponse { display_name: name, pfp_url: pfp, followed_at_ms: ts }
+    }).collect();
+
+    Ok(Json(FollowerListResponse { success: true, followers }))
+}
+
+/// GET /api/account/artists/:stable_id/follower-count - フォロワー数（パブリック）
+pub async fn get_follower_count(
+    State(state): State<Arc<AppState>>,
+    Path(stable_id): Path<String>,
+) -> Result<Json<CountResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let (count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM artist_followers WHERE artist_stable_id = ?"
+    )
+    .bind(&stable_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e)))?;
+
+    Ok(Json(CountResponse { success: true, count }))
 }
 
 // ========================================
