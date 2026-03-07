@@ -305,6 +305,31 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     .execute(pool)
     .await?;
 
+    // transfers テーブル（P2P NFTアルバム転送）
+    sqlx::query(r#"
+        CREATE TABLE IF NOT EXISTS transfers (
+            transfer_id TEXT PRIMARY KEY,
+            sender_peer_id TEXT NOT NULL,
+            recipient_peer_id TEXT NOT NULL,
+            nft_object_id TEXT,
+            escrow_id TEXT,
+            edition_id TEXT,
+            album_title TEXT,
+            album_artist TEXT,
+            cover_url TEXT,
+            track_count INTEGER NOT NULL DEFAULT 0,
+            data_object_key TEXT NOT NULL,
+            data_size_bytes INTEGER NOT NULL DEFAULT 0,
+            data_sha256 TEXT NOT NULL,
+            status INTEGER NOT NULL DEFAULT 0,
+            created_at_ms INTEGER NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            expires_at_ms INTEGER NOT NULL
+        )
+    "#)
+    .execute(pool)
+    .await?;
+
     // devices インデックス
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_devices_peer_id ON devices(peer_id)")
         .execute(pool).await?;
@@ -341,6 +366,16 @@ async fn create_schema(pool: &DbPool) -> Result<()> {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_drop_claims_drop ON drop_claims(drop_id)")
         .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_drop_claims_user ON drop_claims(user_id)")
+        .execute(pool).await?;
+
+    // transfers インデックス
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfers_sender ON transfers(sender_peer_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfers_recipient ON transfers(recipient_peer_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfers_status ON transfers(status)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfers_expires ON transfers(expires_at_ms)")
         .execute(pool).await?;
 
     Ok(())

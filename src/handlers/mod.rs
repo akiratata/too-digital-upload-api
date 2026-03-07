@@ -6,3 +6,4 @@ pub mod artists;
 pub mod drops;
 pub mod camera;
 pub mod devices;
+pub mod transfers;

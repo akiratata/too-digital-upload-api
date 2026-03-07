@@ -722,3 +722,87 @@ pub struct CountResponse {
     pub success: bool,
     pub count: i64,
 }
+
+// ========================================
+// Transfer (P2P NFTアルバム転送)
+// ========================================
+
+/// Transfer ステータス
+pub mod transfer_status {
+    pub const PENDING: i32 = 0;    // 待機中（承認待ち）
+    pub const CLAIMED: i32 = 1;    // 受信者がDL完了
+    pub const CANCELLED: i32 = 2;  // 送信者がキャンセル
+    pub const EXPIRED: i32 = 3;    // 期限切れ（3日）
+}
+
+/// Transfer (DB row)
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Transfer {
+    pub transfer_id: String,
+    pub sender_peer_id: String,
+    pub recipient_peer_id: String,
+    /// NFT object ID (Sui)
+    pub nft_object_id: Option<String>,
+    /// Escrow receipt ID (Sui)
+    pub escrow_id: Option<String>,
+    /// AlbumEdition ID
+    pub edition_id: Option<String>,
+    /// アルバムメタデータ
+    pub album_title: Option<String>,
+    pub album_artist: Option<String>,
+    pub cover_url: Option<String>,
+    pub track_count: i32,
+    /// VPS上のファイルパス (暗号化済みアルバムデータ)
+    pub data_object_key: String,
+    /// ファイルサイズ (bytes)
+    pub data_size_bytes: i64,
+    /// SHA256ハッシュ（検証用）
+    pub data_sha256: String,
+    pub status: i32,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    /// 期限 (Unix ms)
+    pub expires_at_ms: i64,
+}
+
+/// Transfer 作成リクエスト（ファイルアップロード時のメタデータ）
+#[derive(Debug, Deserialize)]
+pub struct CreateTransferRequest {
+    pub sender_peer_id: String,
+    pub recipient_peer_id: String,
+    pub nft_object_id: Option<String>,
+    pub escrow_id: Option<String>,
+    pub edition_id: Option<String>,
+    pub album_title: Option<String>,
+    pub album_artist: Option<String>,
+    pub cover_url: Option<String>,
+    #[serde(default)]
+    pub track_count: i32,
+}
+
+/// Transfer レスポンス
+#[derive(Debug, Serialize)]
+pub struct TransferResponse {
+    pub transfer_id: String,
+    pub sender_peer_id: String,
+    pub recipient_peer_id: String,
+    pub nft_object_id: Option<String>,
+    pub escrow_id: Option<String>,
+    pub edition_id: Option<String>,
+    pub album_title: Option<String>,
+    pub album_artist: Option<String>,
+    pub cover_url: Option<String>,
+    pub track_count: i32,
+    pub download_url: Option<String>,
+    pub data_size_bytes: i64,
+    pub data_sha256: String,
+    pub status: i32,
+    pub created_at_ms: i64,
+    pub expires_at_ms: i64,
+}
+
+/// Transfer ステータス更新リクエスト
+#[derive(Debug, Deserialize)]
+pub struct UpdateTransferStatusRequest {
+    pub peer_id: String,  // 操作者のpeer_id（権限チェック用）
+}

@@ -506,6 +506,13 @@ async fn main() {
         .route("/api/devices/register", post(handlers::devices::register_device))
         .route("/api/devices/:peer_id", get(handlers::devices::list_devices))
         .route("/api/devices/:peer_id/:device_type", delete(handlers::devices::unregister_device))
+        // Transfers API (P2P NFTアルバム転送)
+        .route("/api/transfers", post(handlers::transfers::create_transfer))
+        .route("/api/transfers/:transfer_id", get(handlers::transfers::get_transfer))
+        .route("/api/transfers/:transfer_id/download", get(handlers::transfers::download_transfer))
+        .route("/api/transfers/:transfer_id/claim", post(handlers::transfers::claim_transfer))
+        .route("/api/transfers/:transfer_id/cancel", post(handlers::transfers::cancel_transfer))
+        .route("/api/transfers/pending/:peer_id", get(handlers::transfers::list_pending_transfers))
         // Camera (モバイルカメラ → デスクトップアプリ転送)
         .route("/camera", get(handlers::camera::camera_page))
         .route("/api/camera/upload", post(handlers::camera::upload_image))
@@ -559,6 +566,27 @@ async fn main() {
                     }
                 }
                 Err(e) => warn!("[Job] expire_stale_devices error: {:?}", e),
+            }
+        }
+    });
+
+    // 期限切れ転送処理のバックグラウンドジョブ（1時間ごと）
+    let state_for_transfers = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            info!("[Job] Running expired transfers check...");
+
+            // 期限切れ転送をEXPIRED状態に更新 + ファイル削除
+            if let Err(e) = handlers::transfers::expire_transfers(&state_for_transfers).await {
+                warn!("[Job] expire_transfers error: {:?}", e);
+            }
+
+            // 7日以上前に完了/キャンセル/期限切れになったレコードをパージ
+            let grace_ms: i64 = 7 * 24 * 3600 * 1000;
+            if let Err(e) = handlers::transfers::purge_old_transfers(&state_for_transfers, grace_ms).await {
+                warn!("[Job] purge_old_transfers error: {:?}", e);
             }
         }
     });
